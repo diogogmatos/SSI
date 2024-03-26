@@ -17,17 +17,18 @@ class ServerWorker(object):
         self.addr = addr
         self.msg_cnt = 0
 
-    def process(self, msg):
+    def process(self, msg, srvwrk):
         """ Processa uma mensagem (`bytestring`) enviada pelo CLIENTE.
             Retorna a mensagem a transmitir como resposta (`None` para
             finalizar ligação) """
+        print(msg)
         msg = msg.split(b'\n')
+        print(msg)
         self.msg_cnt += 1
-        uid = int.from_bytes(msg[0], 'big')
-        print(uid)
-        print(msg[1])
-        print(msg[2])
-        self.database_write(uid, msg[1], msg[2])
+        return self.handle(msg, srvwrk)
+        # print(uid) # UID
+        # print(msg[1]) # SUBJECT
+        # print(msg[2]) # MSG
         # Faz o decrypt correto da mensagem, abaixo
         #nonce = msg[:12]
         #salt = msg[12:28]
@@ -39,7 +40,7 @@ class ServerWorker(object):
 
         #return util.encrypt_AESGCM(new_msg) if len(new_msg) > 0 else None
 
-    def database_write(self, uid, subject, msg):
+    def database_write(self, uid, subject, msg, srvwrk):
         """
         Write the message to the database.
         """
@@ -51,17 +52,52 @@ class ServerWorker(object):
         
         now = datetime.now()
         current_time = now.strftime("%H:%M:%S")
-        print(current_time)
-        # Missing, number of message
-        uid = str(uid) + ":" + current_time + ":" + subject.decode()
+        uid = f"{str(srvwrk.id)}:{str(uid)}:{current_time}:{subject.decode()}"
+        print(uid)
         if uid in data:
-            data[uid].append(msg.hex())
+            data[uid].append((msg.hex(), False))
             # Para converter de volta
             # print(bytes.fromhex(msg_hex))
         else:
-            data[uid] = [msg.hex()]
+            data[uid] = [(msg.hex(), False)]
         with open('database.json', 'w') as f:
             json.dump(data, f)
+    
+    def database_read(self, num):
+        """
+        Read the messages from the database.
+        """
+        try:
+            with open('database.json', 'r') as f:
+                data = json.load(f)
+        except (FileNotFoundError, json.JSONDecodeError):
+            data = {}
+        
+
+        for k, v in data.items():
+            print(k)
+            if k.startswith(str(num)):
+                return v
+        return None
+    
+    def handle(self, msg, srvwrk):
+        """
+        Handle the message.
+        """
+        match msg[0]:
+            case b'send':
+                uid = int.from_bytes(msg[1], 'big')
+                self.database_write(uid, msg[2], msg[3], srvwrk)
+            case b'askqueue':
+                print("Ask queue")
+            case b'getmsg':
+                print("Get message")
+                print(msg[1])
+                num = int.from_bytes(msg[1], 'big')
+                msg = self.database_read(num)
+                return msg
+            case _:
+                print("Invalid command")
 
 #
 #
@@ -79,13 +115,16 @@ async def handle_echo(reader, writer):
     data = await reader.read(max_msg_size)
     while True:
         if not data: continue
-        data = srvwrk.process(data)
+        data = srvwrk.process(data, srvwrk)
+        print(f"ABC: {data}")
         if not data: break
-        writer.write(data)
+        hex_string = data[0][0]
+        print(hex_string)
+        byte_data = bytes.fromhex(hex_string)
+        writer.write(byte_data)
         await writer.drain()
-        data = await reader.read(max_msg_size)
-    print("[%d]" % srvwrk.id)
-    writer.close()
+        print("aqui")
+    return data
 
 
 def run_server():

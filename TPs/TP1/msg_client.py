@@ -58,6 +58,7 @@ class Client:
             print(uid)
             print(msg)
             uid_bytes = uid.to_bytes(4, 'big')
+            self.writer.write(b'send\n')
             self.writer.write(uid_bytes)
             self.writer.write(b'\n')
             self.writer.write(subject.encode())
@@ -86,18 +87,19 @@ class Client:
         Ask the server for the non read messages in the queue for the user.
         """
         self.writer.write(b'askqueue\n')
-        await self.writer.drain()
-        response = await self.reader.read(max_msg_size)
-        print(response.decode())
+        
 
     async def get_msg(self, num):
         """
         Get the message with the number <NUM> from the queue.
         """
-        self.writer.write(f'getmsg {num}\n'.encode())
-        await self.writer.drain()
-        response = await self.reader.read(max_msg_size)
-        print(response.decode())
+        print(num)
+        num_bytes = num.to_bytes(4, 'big')
+        self.writer.write(b'getmsg\n')
+        self.writer.write(num_bytes)
+        self.writer.write(b'\n')
+        valor = await self.reader.read(max_msg_size)
+        print(valor)
 
 async def handle_commands(client, args):
     print(args)
@@ -110,7 +112,7 @@ async def handle_commands(client, args):
     elif args.command == 'askqueue':
         await client.ask_queue()
     elif args.command == 'getmsg':
-        await client.get_msg(args.num)
+        await client.get_msg(args.uid)
     elif args.command == 'help':
         client.help()
 
