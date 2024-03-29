@@ -17,28 +17,29 @@ max_msg_size = 9999
 p = 0xFFFFFFFFFFFFFFFFC90FDAA22168C234C4C6628B80DC1CD129024E088A67CC74020BBEA63B139B22514A08798E3404DDEF9519B3CD3A431B302B0A6DF25F14374FE1356D6D51C245E485B576625E7EC6F44C42E9A637ED6B0BFF5CB6F406B7EDEE386BFB5A899FA5AE9F24117C4B1FE649286651ECE45B3DC2007CB8A163BF0598DA48361C55D39A69163FA8FD24CF5F83655D23DCA3AD961C62F356208552BB9ED529077096966D670C354E4ABC9804F1746C08CA18217C32905E462E36CE3BE39E772C180E86039B2783A2EC07A28FB5C55DF06F4C52C9DE2BCBF6955817183995497CEA956AE515D2261898FA051015728E5A8AACAA68FFFFFFFFFFFFFFFF
 g = 2
 ca_cert = x509.load_pem_x509_certificate(open("MSG_CLI1.crt", "rb").read())
-
+end = 0
 
 class Client:
     """ Classe que implementa a funcionalidade de um CLIENTE. """
 
-    def __init__(self, sckt=None):
+    def __init__(self, user_data="MSG_CLI1", sckt=None):
         """ Construtor da classe. """
         self.sckt = sckt
         self.msg_cnt = 0
         self.dhprivate_key = dh.DHParameterNumbers(
             p, g).parameters().generate_private_key()
         self.rsaprivate_key = None
-        # self.cert = "MSG_CLI1.crt"
         self.shared_key = None
         self.aesgcm = None
-
-        with open("MSG_CLI1.p12", "rb") as p12_file:
+        file = f"{user_data}.p12"
+        print(file)
+        with open(file, "rb") as p12_file:
             (self.rsaprivate_key, self.cert, _) = serialization.pkcs12.load_key_and_certificates(
                 p12_file.read(),
                 password=None,
             )
-
+        print(self.rsaprivate_key)
+        print(self.cert)
             # pkcs12 load_key_and_certificates , ficheiro e a passe None
             # passe server 1234
 
@@ -47,7 +48,6 @@ class Client:
             Retorna a mensagem a transmitir como resposta (`None` para
             finalizar ligação) """
         self.msg_cnt += 1
-
         if not msg and self.msg_cnt == 1:
             publicKey = self.dhprivate_key.public_key()
             pem = publicKey.public_bytes(
@@ -56,8 +56,8 @@ class Client:
             )
             print("Sending public DH key.")
             return pem
-
-        if unpair(msg)[0].splitlines()[0] == b'-----BEGIN PUBLIC KEY-----':
+        split = unpair(msg)[0].splitlines()
+        if len(split) > 0 and unpair(msg)[0].splitlines()[0] == b'-----BEGIN PUBLIC KEY-----':
             print("Received public key, cert and signature.")
 
             server_dh_pub = serialization.load_pem_public_key(unpair(msg)[0])
@@ -135,7 +135,7 @@ class Client:
             print("Sending public key, cert and signature.")
             return pair2
 
-        if not (msg.splitlines()[0] == b'-----BEGIN PUBLIC KEY-----') and msg:
+        if not (len(split) > 0 and msg.splitlines()[0] == b'-----BEGIN PUBLIC KEY-----') and msg:
             nonce = msg[:12]
             ciphertext = msg[12:]
             msg = self.aesgcm.decrypt(nonce, ciphertext, None)
@@ -149,12 +149,21 @@ class Client:
 
         return ciphertext if len(ciphertext) > 0 else None
 
-
+    def send_msg(self, args):
+        """
+        Send a message to the server.
+        """
+        #msg = self.process(args)
+        msg = f'send {args.uid} {args.subject}\n'
+        # self.writer.write(f'send {uid} {subject} {message}\n'.encode())
+        # await self.writer.drain()
+        #return message.encode()
+        return msg
+            
 def handle_commands(client, args):
     print(args)
     if args.command == 'send':
-        print(args)
-        client.send_msg(args.uid, args.subject)
+        return f"send {args.uid} {args.subject}\n"
     elif args.command == "-user":
         print(args)
         client.userdata_file = args.userdata
@@ -183,7 +192,7 @@ def help():
     print("getmsg <NUM> -- gets the message with the number <NUM> from the queue.")
     print("help -- prints this help message.")
     print()
-    return
+    return None
 #
 #
 # Funcionalidade Cliente/Servidor
@@ -194,7 +203,7 @@ def help():
 
 async def tcp_echo_client():
     parser = argparse.ArgumentParser(description='Client for TCP Echo Server')
-    parser.add_argument('-user', dest='userdata', default='MSG_CLI1.p12',
+    parser.add_argument('-user', dest='userdata', default='MSG_CLI1',
                         help='Specify user data file (default: userdata.p12)')
     parser.add_argument('command', choices=[
                         'send', 'askqueue', 'getmsg', 'help'], help='Command to execute')
@@ -203,12 +212,15 @@ async def tcp_echo_client():
     parser.add_argument('num', nargs='?', type=int,
                         help='Number of the message')
     args = parser.parse_args()
-
+    user_data = args.userdata
     reader, writer = await asyncio.open_connection('127.0.0.1', conn_port)
     addr = writer.get_extra_info('peername')
-    client = Client(addr)
-    handle_commands(client, args)
-    msg = client.process()
+    client = Client(user_data, addr)
+    text = handle_commands(client, args)
+    print(text)
+    msg = client.process() 
+    # if text != None:
+    #     writer.write(text.encode())
     while msg:
         writer.write(msg)
         msg = await reader.read(max_msg_size)
@@ -239,7 +251,6 @@ def unpair(xy):
     x = xy[2:len_x+2]
     y = xy[len_x+2:]
     return x, y
-
 
 def valida_rsa_signature(rsa_public_key, signature, data):
     try:

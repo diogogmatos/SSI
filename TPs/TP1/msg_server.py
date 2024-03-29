@@ -9,6 +9,9 @@ from cryptography.hazmat.primitives.asymmetric import padding
 from cryptography import x509
 import validate_cert
 import os
+import json
+from datetime import datetime
+
 
 conn_cnt = 0
 conn_port = 8443
@@ -44,7 +47,6 @@ class ServerWorker(object):
             Retorna a mensagem a transmitir como resposta (`None` para
             finalizar ligação) """
         self.msg_cnt += 1
-
         if msg.splitlines()[0] == b'-----BEGIN PUBLIC KEY-----':
             print("Received public DH key.")
             client_dh_pub = serialization.load_pem_public_key(msg)
@@ -153,7 +155,55 @@ class ServerWorker(object):
 
         return ciphertext if len(ciphertext) > 0 else None
 
+    def askqueue(self, client_id):
+        messages = []
+        with open('database.json', 'r') as file:
+            json_data = json.load(file)
+            for key, value in json_data.items():
+                parts = key.split(":")
+                sender = parts[1]
+                if sender == client_id and value[1] == False:
+                    messages.append((parts[2], value[0])) 
 
+        # Sort messages based on time
+        messages.sort(key=lambda x: x[0])
+        
+        # Extract message texts
+        sorted_messages = [msg for time, msg in messages]
+        
+        return sorted_messages
+
+    def get_msg(self, num):
+        with open('database.json', 'r') as file:
+            json_data = json.load(file)
+            for key, value in json_data.items():
+                parts = key.split(":")
+                message_num = parts[0]
+                if message_num == num:
+                    return value[0] 
+                
+    def store_message(self, sender, subject, message):
+        json_data = {}
+        with open('database.json', 'r') as file:
+            json_data = json.load(file)
+
+        current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        # Generate a new message number
+        new_message_num = str(len(json_data) + 1)
+
+        # Create the new key in the format "<NUM>:<SENDER>:<TIME>:<SUBJECT>"
+        new_key = f"{new_message_num}:{sender}:{current_time}:{subject}"
+
+        # Add the new message to the JSON data
+        json_data[new_key] = (message, False)
+
+        # Write the updated JSON data back to the file
+        with open('database.json', 'w') as file:
+            json.dump(json_data, file)
+
+        print("Message stored successfully.")
+    
 #
 #
 # Funcionalidade Cliente/Servidor
