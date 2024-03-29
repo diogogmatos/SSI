@@ -19,6 +19,7 @@ g = 2
 ca_cert = x509.load_pem_x509_certificate(open("MSG_CLI1.crt", "rb").read())
 end = 0
 
+
 class Client:
     """ Classe que implementa a funcionalidade de um CLIENTE. """
 
@@ -40,8 +41,8 @@ class Client:
             )
         print(self.rsaprivate_key)
         print(self.cert)
-            # pkcs12 load_key_and_certificates , ficheiro e a passe None
-            # passe server 1234
+        # pkcs12 load_key_and_certificates , ficheiro e a passe None
+        # passe server 1234
 
     def process(self, msg=b""):
         """ Processa uma mensagem (`bytestring`) enviada pelo SERVIDOR.
@@ -153,13 +154,14 @@ class Client:
         """
         Send a message to the server.
         """
-        #msg = self.process(args)
+        # msg = self.process(args)
         msg = f'send {args.uid} {args.subject}\n'
         # self.writer.write(f'send {uid} {subject} {message}\n'.encode())
         # await self.writer.drain()
-        #return message.encode()
+        # return message.encode()
         return msg
-            
+
+
 def handle_commands(client, args):
     print(args)
     if args.command == 'send':
@@ -218,7 +220,7 @@ async def tcp_echo_client():
     client = Client(user_data, addr)
     text = handle_commands(client, args)
     print(text)
-    msg = client.process() 
+    msg = client.process()
     # if text != None:
     #     writer.write(text.encode())
     while msg:
@@ -251,6 +253,7 @@ def unpair(xy):
     x = xy[2:len_x+2]
     y = xy[len_x+2:]
     return x, y
+
 
 def valida_rsa_signature(rsa_public_key, signature, data):
     try:

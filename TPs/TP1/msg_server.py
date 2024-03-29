@@ -163,14 +163,14 @@ class ServerWorker(object):
                 parts = key.split(":")
                 sender = parts[1]
                 if sender == client_id and value[1] == False:
-                    messages.append((parts[2], value[0])) 
+                    messages.append((parts[2], value[0]))
 
         # Sort messages based on time
         messages.sort(key=lambda x: x[0])
-        
+
         # Extract message texts
         sorted_messages = [msg for time, msg in messages]
-        
+
         return sorted_messages
 
     def get_msg(self, num):
@@ -180,8 +180,8 @@ class ServerWorker(object):
                 parts = key.split(":")
                 message_num = parts[0]
                 if message_num == num:
-                    return value[0] 
-                
+                    return value[0]
+
     def store_message(self, sender, subject, message):
         json_data = {}
         with open('database.json', 'r') as file:
@@ -203,7 +203,7 @@ class ServerWorker(object):
             json.dump(json_data, file)
 
         print("Message stored successfully.")
-    
+
 #
 #
 # Funcionalidade Cliente/Servidor
