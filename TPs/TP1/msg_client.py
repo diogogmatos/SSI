@@ -59,10 +59,12 @@ class Client:
             return pem
         split = unpair(msg)[0].splitlines()
         if len(split) > 0 and unpair(msg)[0].splitlines()[0] == b'-----BEGIN PUBLIC KEY-----':
+            print("Entrei")
             print("Received public key, cert and signature.")
-
+            print(unpair(msg)[0])
             server_dh_pub = serialization.load_pem_public_key(unpair(msg)[0])
-
+            print(unpair(unpair(msg)[1]))
+            print(server_dh_pub)
             signature, cert_name = unpair(unpair(msg)[1])
             cert_name = cert_name.decode()
             # Verifica o certificado
@@ -221,15 +223,32 @@ async def tcp_echo_client():
     text = handle_commands(client, args)
     print(text)
     msg = client.process()
-    # if text != None:
-    #     writer.write(text.encode())
-    while msg:
-        writer.write(msg)
-        msg = await reader.read(max_msg_size)
-        if msg:
-            msg = client.process(msg)
-        else:
-            break
+    writer.write(msg)
+    msg = await reader.read(max_msg_size)
+    if msg:
+        msg = client.process(msg)
+        print(msg)
+    print("Aqui")
+    match args.command:
+        case 'send':
+            if text != None:
+                print("Entrei")
+                writer.write(text.encode())
+                print("A")
+                while msg:
+                    # msg = await reader.read(max_msg_size)
+                    if msg:
+                        msg = client.process(msg)
+                    else:
+                        break
+        case 'askqueue':
+            linha = f"askqueue\n{args.userdata}\n"
+            writer.write(bytes(linha, 'utf-8'))
+            output = await reader.read(max_msg_size)
+            print(output.decode())
+        case 'getmsg':
+            output = await reader.read(max_msg_size)
+            print(output.decode())
     writer.write(b'\n')
     print('Socket closed!')
     writer.close()

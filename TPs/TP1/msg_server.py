@@ -47,8 +47,17 @@ class ServerWorker(object):
             Retorna a mensagem a transmitir como resposta (`None` para
             finalizar ligação) """
         self.msg_cnt += 1
+        try:
+            print("ABC")
+            array = self.handle_commands(msg)
+            concatenated_string = '\n'.join(array)
+            return concatenated_string.encode()
+
+        except:
+            pass
         if msg.splitlines()[0] == b'-----BEGIN PUBLIC KEY-----':
             print("Received public DH key.")
+            print(msg)
             client_dh_pub = serialization.load_pem_public_key(msg)
             # Cria o par de chaves públicas
             dh_pair = mkpair(
@@ -85,9 +94,10 @@ class ServerWorker(object):
         if unpair(msg)[0].splitlines()[0] == b'-----BEGIN PUBLIC KEY-----':
 
             print("Received public key, cert and signature.")
-
+            print(unpair(msg)[0])
             server_dh_pub = serialization.load_pem_public_key(unpair(msg)[0])
-
+            print(unpair(unpair(msg)[1]))
+            print(server_dh_pub)
             signature, cert_name = unpair(unpair(msg)[1])
             cert_name = cert_name.decode()
 
@@ -157,21 +167,25 @@ class ServerWorker(object):
 
     def askqueue(self, client_id):
         messages = []
+        json_data = {}
+        print("Entrei 2")
         with open('database.json', 'r') as file:
             json_data = json.load(file)
             for key, value in json_data.items():
                 parts = key.split(":")
                 sender = parts[1]
-                if sender == client_id and value[1] == False:
-                    messages.append((parts[2], value[0]))
+                print(sender)
+                print(key)
+                for v in value:
+                    if sender == client_id and not v[1]:
+                        print(sender)
+                        messages.append(v[0])
 
         # Sort messages based on time
         messages.sort(key=lambda x: x[0])
-
+        print(messages)
         # Extract message texts
-        sorted_messages = [msg for time, msg in messages]
-
-        return sorted_messages
+        return messages
 
     def get_msg(self, num):
         with open('database.json', 'r') as file:
@@ -181,6 +195,18 @@ class ServerWorker(object):
                 message_num = parts[0]
                 if message_num == num:
                     return value[0]
+
+    def handle_commands(self, msg):
+        print("ENTREII")
+        msg = msg.splitlines()
+        print(msg)
+        type = msg[0].decode()
+        print(type)
+        if type == "askqueue":
+            print("aqui")
+            return self.askqueue(msg[1].decode())
+        elif type == "getmsg":
+            return self.get_msg(msg[1].decode())
 
     def store_message(self, sender, subject, message):
         json_data = {}
@@ -223,7 +249,9 @@ async def handle_echo(reader, writer):
             continue
         if data[:1] == b'\n':
             break
+        print(data)
         data = srvwrk.process(data)
+        print(data)
         if data == -1:
             break
         writer.write(data)
