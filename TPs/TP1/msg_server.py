@@ -50,8 +50,13 @@ class ServerWorker(object):
         try:
             print("ABC")
             array = self.handle_commands(msg)
-            concatenated_string = '\n'.join(array)
-            return concatenated_string.encode()
+            len(array)
+            if len(array) and isinstance(array, list) > 0:
+                concatenated_string = '\n'.join(array)
+                return concatenated_string.encode()
+            else:
+                print(array)
+                return array.encode()
 
         except:
             pass
@@ -193,8 +198,10 @@ class ServerWorker(object):
             for key, value in json_data.items():
                 parts = key.split(":")
                 message_num = parts[0]
+                print(message_num)
                 if message_num == num:
-                    return value[0]
+                    print("Entrei abc")
+                    return value[0][0]
 
     def handle_commands(self, msg):
         print("ENTREII")
@@ -206,6 +213,8 @@ class ServerWorker(object):
             print("aqui")
             return self.askqueue(msg[1].decode())
         elif type == "getmsg":
+            print("Boas")
+            print(msg[1].decode())
             return self.get_msg(msg[1].decode())
 
     def store_message(self, sender, subject, message):

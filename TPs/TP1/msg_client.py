@@ -247,6 +247,8 @@ async def tcp_echo_client():
             output = await reader.read(max_msg_size)
             print(output.decode())
         case 'getmsg':
+            linha = f"getmsg\n{args.uid}\n"
+            writer.write(bytes(linha, 'utf-8'))
             output = await reader.read(max_msg_size)
             print(output.decode())
     writer.write(b'\n')
