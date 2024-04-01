@@ -48,9 +48,7 @@ class ServerWorker(object):
             finalizar ligação) """
         self.msg_cnt += 1
         try:
-            print("ABC")
             array = self.handle_commands(msg)
-            len(array)
             if len(array) and isinstance(array, list) > 0:
                 concatenated_string = '\n'.join(array)
                 return concatenated_string.encode()
@@ -62,7 +60,6 @@ class ServerWorker(object):
             pass
         if msg.splitlines()[0] == b'-----BEGIN PUBLIC KEY-----':
             print("Received public DH key.")
-            print(msg)
             client_dh_pub = serialization.load_pem_public_key(msg)
             # Cria o par de chaves públicas
             dh_pair = mkpair(
@@ -173,22 +170,17 @@ class ServerWorker(object):
     def askqueue(self, client_id):
         messages = []
         json_data = {}
-        print("Entrei 2")
         with open('database.json', 'r') as file:
             json_data = json.load(file)
             for key, value in json_data.items():
                 parts = key.split(":")
                 sender = parts[1]
-                print(sender)
-                print(key)
                 for v in value:
                     if sender == client_id and not v[1]:
-                        print(sender)
                         messages.append(v[0])
 
         # Sort messages based on time
         messages.sort(key=lambda x: x[0])
-        print(messages)
         # Extract message texts
         return messages
 
@@ -198,46 +190,49 @@ class ServerWorker(object):
             for key, value in json_data.items():
                 parts = key.split(":")
                 message_num = parts[0]
-                print(message_num)
                 if message_num == num:
-                    print("Entrei abc")
                     return value[0][0]
 
+    def store_msg(self, sender, subject, message):
+        try:
+            json_data = {}
+            with open('database.json', 'r') as file:
+                json_data = json.load(file)
+
+            current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+            # Generate a new message number
+            new_message_num = str(len(json_data) + 1)
+
+            # Create the new key in the format "<NUM>:<SENDER>:<TIME>:<SUBJECT>"
+            new_key = f"{new_message_num}:{sender}:{current_time}:{subject}"
+
+            # Add the new message to the JSON data
+            json_data[new_key] = (message, False)
+
+            # Write the updated JSON data back to the file
+            with open('database.json', 'w') as file:
+                json.dump(json_data, file)
+
+            print("Message stored successfully.")
+        except:
+            print("Error storing message.")
+
     def handle_commands(self, msg):
-        print("ENTREII")
         msg = msg.splitlines()
-        print(msg)
         type = msg[0].decode()
-        print(type)
         if type == "askqueue":
-            print("aqui")
             return self.askqueue(msg[1].decode())
         elif type == "getmsg":
-            print("Boas")
-            print(msg[1].decode())
             return self.get_msg(msg[1].decode())
-
-    def store_message(self, sender, subject, message):
-        json_data = {}
-        with open('database.json', 'r') as file:
-            json_data = json.load(file)
-
-        current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-        # Generate a new message number
-        new_message_num = str(len(json_data) + 1)
-
-        # Create the new key in the format "<NUM>:<SENDER>:<TIME>:<SUBJECT>"
-        new_key = f"{new_message_num}:{sender}:{current_time}:{subject}"
-
-        # Add the new message to the JSON data
-        json_data[new_key] = (message, False)
-
-        # Write the updated JSON data back to the file
-        with open('database.json', 'w') as file:
-            json.dump(json_data, file)
-
-        print("Message stored successfully.")
+        elif type == "send":
+            if len(msg) > 4:
+                msg_send = ""
+                for i in range(3, len(msg)):
+                    msg_send += msg[i].decode() + " "
+                return self.store_msg(msg[1].decode(), msg[2].decode(), msg_send)
+            else:
+                return self.store_msg(msg[1].decode(), msg[2].decode(), msg[3].decode())
 
 #
 #
@@ -258,9 +253,7 @@ async def handle_echo(reader, writer):
             continue
         if data[:1] == b'\n':
             break
-        print(data)
         data = srvwrk.process(data)
-        print(data)
         if data == -1:
             break
         writer.write(data)

@@ -33,14 +33,11 @@ class Client:
         self.shared_key = None
         self.aesgcm = None
         file = f"{user_data}.p12"
-        print(file)
         with open(file, "rb") as p12_file:
             (self.rsaprivate_key, self.cert, _) = serialization.pkcs12.load_key_and_certificates(
                 p12_file.read(),
                 password=None,
             )
-        print(self.rsaprivate_key)
-        print(self.cert)
         # pkcs12 load_key_and_certificates , ficheiro e a passe None
         # passe server 1234
 
@@ -59,12 +56,8 @@ class Client:
             return pem
         split = unpair(msg)[0].splitlines()
         if len(split) > 0 and unpair(msg)[0].splitlines()[0] == b'-----BEGIN PUBLIC KEY-----':
-            print("Entrei")
             print("Received public key, cert and signature.")
-            print(unpair(msg)[0])
             server_dh_pub = serialization.load_pem_public_key(unpair(msg)[0])
-            print(unpair(unpair(msg)[1]))
-            print(server_dh_pub)
             signature, cert_name = unpair(unpair(msg)[1])
             cert_name = cert_name.decode()
             # Verifica o certificado
@@ -165,11 +158,9 @@ class Client:
 
 
 def handle_commands(client, args):
-    print(args)
     if args.command == 'send':
         return f"send {args.uid} {args.subject}\n"
     elif args.command == "-user":
-        print(args)
         client.userdata_file = args.userdata
     elif args.command == 'askqueue':
         # client.ask_queue()
@@ -221,20 +212,20 @@ async def tcp_echo_client():
     addr = writer.get_extra_info('peername')
     client = Client(user_data, addr)
     text = handle_commands(client, args)
-    print(text)
     msg = client.process()
     writer.write(msg)
     msg = await reader.read(max_msg_size)
     if msg:
         msg = client.process(msg)
-        print(msg)
-    print("Aqui")
     match args.command:
         case 'send':
             if text != None:
-                print("Entrei")
-                writer.write(text.encode())
-                print("A")
+                msg_send = str(
+                    input("Input message to send (empty to finish): "))
+                text = text.strip()
+                result = text + " " + msg_send + "\n"
+                result = "\n".join(result.split())
+                writer.write(result.encode())
                 while msg:
                     # msg = await reader.read(max_msg_size)
                     if msg:
@@ -293,7 +284,6 @@ def valida_rsa_signature(rsa_public_key, signature, data):
 
 
 def load_cert(cert_name):
-    print(cert_name)
     with open(cert_name, "rb") as cert_file:
         return cert_file.read()
 
