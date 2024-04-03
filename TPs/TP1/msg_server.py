@@ -13,12 +13,54 @@ import json
 from datetime import datetime
 
 
+# CONSTANTS
+
+
 conn_cnt = 0
 conn_port = 8443
 max_msg_size = 9999
 p = 0xFFFFFFFFFFFFFFFFC90FDAA22168C234C4C6628B80DC1CD129024E088A67CC74020BBEA63B139B22514A08798E3404DDEF9519B3CD3A431B302B0A6DF25F14374FE1356D6D51C245E485B576625E7EC6F44C42E9A637ED6B0BFF5CB6F406B7EDEE386BFB5A899FA5AE9F24117C4B1FE649286651ECE45B3DC2007CB8A163BF0598DA48361C55D39A69163FA8FD24CF5F83655D23DCA3AD961C62F356208552BB9ED529077096966D670C354E4ABC9804F1746C08CA18217C32905E462E36CE3BE39E772C180E86039B2783A2EC07A28FB5C55DF06F4C52C9DE2BCBF6955817183995497CEA956AE515D2261898FA051015728E5A8AACAA68FFFFFFFFFFFFFFFF
 g = 2
 ca_cert = x509.load_pem_x509_certificate(open("MSG_SERVER.crt", "rb").read())
+
+
+# def load_cert(cert_name):
+#     with open(cert_name, "rb") as cert_file:
+#         return cert_file.read()
+
+
+# SERVER
+
+
+def validate_rsa_signature(rsa_public_key, signature, data):
+    try:
+        rsa_public_key.verify(
+            signature,
+            data,
+            padding.PSS(
+                mgf=padding.MGF1(hashes.SHA256()),
+                salt_length=padding.PSS.MAX_LENGTH
+            ),
+            hashes.SHA256()
+        )
+        return True
+    except:
+        return False
+
+
+def mkpair(x, y):
+    """ produz uma byte-string contendo o tuplo '(x,y)' ('x' e 'y' são byte-strings) """
+    len_x = len(x)
+    len_x_bytes = len_x.to_bytes(2, 'little')
+    return len_x_bytes + x + y
+
+
+def unpair(xy):
+    """ extrai componentes de um par codificado com 'mkpair' """
+    len_x = int.from_bytes(xy[:2], 'little')
+    x = xy[2:len_x+2]
+    y = xy[len_x+2:]
+    return x, y
 
 
 class ServerWorker(object):
@@ -41,6 +83,22 @@ class ServerWorker(object):
                 p12_file.read(),
                 password=None,
             )
+
+    def handle_commands(self, msg):
+        msg = msg.splitlines()
+        type = msg[0].decode()
+        if type == "askqueue":
+            return self.askqueue(msg[1].decode())
+        elif type == "getmsg":
+            return self.get_msg(msg[1].decode())
+        elif type == "send":
+            if len(msg) > 4:
+                msg_send = ""
+                for i in range(3, len(msg)):
+                    msg_send += msg[i].decode() + " "
+                return self.store_msg(msg[1].decode(), msg[2].decode(), msg_send)
+            else:
+                return self.store_msg(msg[1].decode(), msg[2].decode(), msg[3].decode())
 
     def process(self, msg):
         """ Processa uma mensagem (`bytestring`) enviada pelo CLIENTE.
@@ -124,7 +182,7 @@ class ServerWorker(object):
                     format=serialization.PublicFormat.SubjectPublicKeyInfo)
             )
 
-            if not valida_rsa_signature(server_rsa_public_key, signature, dh_pair):
+            if not validate_rsa_signature(server_rsa_public_key, signature, dh_pair):
                 print("Signature is not valid")
                 return -1
             print("Signature is valid")
@@ -218,28 +276,8 @@ class ServerWorker(object):
         except:
             print("Error storing message.")
 
-    def handle_commands(self, msg):
-        msg = msg.splitlines()
-        type = msg[0].decode()
-        if type == "askqueue":
-            return self.askqueue(msg[1].decode())
-        elif type == "getmsg":
-            return self.get_msg(msg[1].decode())
-        elif type == "send":
-            if len(msg) > 4:
-                msg_send = ""
-                for i in range(3, len(msg)):
-                    msg_send += msg[i].decode() + " "
-                return self.store_msg(msg[1].decode(), msg[2].decode(), msg_send)
-            else:
-                return self.store_msg(msg[1].decode(), msg[2].decode(), msg[3].decode())
 
-#
-#
-# Funcionalidade Cliente/Servidor
-#
-# obs: não deverá ser necessário alterar o que se segue
-#
+# MAIN FUNCTIONALITY
 
 
 async def handle_echo(reader, writer):
@@ -263,7 +301,10 @@ async def handle_echo(reader, writer):
     writer.close()
 
 
-def run_server():
+# MAIN
+
+
+def main():
     loop = asyncio.new_event_loop()
     coro = asyncio.start_server(handle_echo, '127.0.0.1', conn_port)
     server = loop.run_until_complete(coro)
@@ -281,40 +322,4 @@ def run_server():
     print('\nFINISHED!')
 
 
-def mkpair(x, y):
-    """ produz uma byte-string contendo o tuplo '(x,y)' ('x' e 'y' são byte-strings) """
-    len_x = len(x)
-    len_x_bytes = len_x.to_bytes(2, 'little')
-    return len_x_bytes + x + y
-
-
-def unpair(xy):
-    """ extrai componentes de um par codificado com 'mkpair' """
-    len_x = int.from_bytes(xy[:2], 'little')
-    x = xy[2:len_x+2]
-    y = xy[len_x+2:]
-    return x, y
-
-
-def valida_rsa_signature(rsa_public_key, signature, data):
-    try:
-        rsa_public_key.verify(
-            signature,
-            data,
-            padding.PSS(
-                mgf=padding.MGF1(hashes.SHA256()),
-                salt_length=padding.PSS.MAX_LENGTH
-            ),
-            hashes.SHA256()
-        )
-        return True
-    except:
-        return False
-
-
-def load_cert(cert_name):
-    with open(cert_name, "rb") as cert_file:
-        return cert_file.read()
-
-
-run_server()
+main()

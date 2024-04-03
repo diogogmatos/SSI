@@ -1,7 +1,6 @@
 # Código baseado em https://docs.python.org/3.6/library/asyncio-stream.html#tcp-echo-client-using-streams
 import asyncio
 import argparse
-import socket
 from cryptography.hazmat.primitives.asymmetric import dh
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
@@ -12,12 +11,53 @@ from cryptography.hazmat.primitives.asymmetric import padding
 import validate_cert
 import os
 
+# CONSTANTS
+
 conn_port = 8443
 max_msg_size = 9999
 p = 0xFFFFFFFFFFFFFFFFC90FDAA22168C234C4C6628B80DC1CD129024E088A67CC74020BBEA63B139B22514A08798E3404DDEF9519B3CD3A431B302B0A6DF25F14374FE1356D6D51C245E485B576625E7EC6F44C42E9A637ED6B0BFF5CB6F406B7EDEE386BFB5A899FA5AE9F24117C4B1FE649286651ECE45B3DC2007CB8A163BF0598DA48361C55D39A69163FA8FD24CF5F83655D23DCA3AD961C62F356208552BB9ED529077096966D670C354E4ABC9804F1746C08CA18217C32905E462E36CE3BE39E772C180E86039B2783A2EC07A28FB5C55DF06F4C52C9DE2BCBF6955817183995497CEA956AE515D2261898FA051015728E5A8AACAA68FFFFFFFFFFFFFFFF
 g = 2
 ca_cert = x509.load_pem_x509_certificate(open("MSG_CLI1.crt", "rb").read())
 end = 0
+
+
+# def load_cert(cert_name):
+#     with open(cert_name, "rb") as cert_file:
+#         return cert_file.read()
+
+
+# CLIENT
+
+
+def validate_rsa_signature(rsa_public_key, signature, data):
+    try:
+        rsa_public_key.verify(
+            signature,
+            data,
+            padding.PSS(
+                mgf=padding.MGF1(hashes.SHA256()),
+                salt_length=padding.PSS.MAX_LENGTH
+            ),
+            hashes.SHA256()
+        )
+        return True
+    except:
+        return False
+
+
+def mkpair(x, y):
+    """ produz uma byte-string contendo o tuplo '(x,y)' ('x' e 'y' são byte-strings) """
+    len_x = len(x)
+    len_x_bytes = len_x.to_bytes(2, 'little')
+    return len_x_bytes + x + y
+
+
+def unpair(xy):
+    """ extrai componentes de um par codificado com 'mkpair' """
+    len_x = int.from_bytes(xy[:2], 'little')
+    x = xy[2:len_x+2]
+    y = xy[len_x+2:]
+    return x, y
 
 
 class Client:
@@ -83,7 +123,7 @@ class Client:
                     format=serialization.PublicFormat.SubjectPublicKeyInfo)
             )
 
-            if not valida_rsa_signature(server_rsa_public_key, signature, dh_pair):
+            if not validate_rsa_signature(server_rsa_public_key, signature, dh_pair):
                 print("Signature is not valid")
                 return None
             print("Signature is valid")
@@ -157,6 +197,24 @@ class Client:
         return msg
 
 
+# MAIN FUNCTIONALITY
+    
+
+def help():
+    """
+    Print the help menu.
+    """
+    print("The following commands are available:")
+    print()
+    print("-user <FNAME> -- option argument which specifies the user's data file. The default is userdata.p12")
+    print("send <UID> <SUBJECT> -- sends a message with subject <SUBJECT> to the user with an identifier <UID>. The max size is 1000 bytes.")
+    print("askqueue -- asks the server for the non read messages in the queue for the user.")
+    print("getmsg <NUM> -- gets the message with the number <NUM> from the queue.")
+    print("help -- prints this help message.")
+    print()
+    return None
+
+
 def handle_commands(client, args):
     if args.command == 'send':
         return f"send {args.uid} {args.subject}\n"
@@ -172,28 +230,6 @@ def handle_commands(client, args):
         help()
     else:
         print("Not valid")
-
-
-@staticmethod
-def help():
-    """
-    Print the help menu.
-    """
-    print("The following commands are available:")
-    print()
-    print("-user <FNAME> -- option argument which specifies the user's data file. The default is userdata.p12")
-    print("send <UID> <SUBJECT> -- sends a message with subject <SUBJECT> to the user with an identifier <UID>. The max size is 1000 bytes.")
-    print("askqueue -- asks the server for the non read messages in the queue for the user.")
-    print("getmsg <NUM> -- gets the message with the number <NUM> from the queue.")
-    print("help -- prints this help message.")
-    print()
-    return None
-#
-#
-# Funcionalidade Cliente/Servidor
-#
-# obs: não deverá ser necessário alterar o que se segue
-#
 
 
 async def tcp_echo_client():
@@ -247,45 +283,12 @@ async def tcp_echo_client():
     writer.close()
 
 
-def run_client():
+# MAIN
+
+
+def main():
     loop = asyncio.get_event_loop()
     loop.run_until_complete(tcp_echo_client())
 
 
-def mkpair(x, y):
-    """ produz uma byte-string contendo o tuplo '(x,y)' ('x' e 'y' são byte-strings) """
-    len_x = len(x)
-    len_x_bytes = len_x.to_bytes(2, 'little')
-    return len_x_bytes + x + y
-
-
-def unpair(xy):
-    """ extrai componentes de um par codificado com 'mkpair' """
-    len_x = int.from_bytes(xy[:2], 'little')
-    x = xy[2:len_x+2]
-    y = xy[len_x+2:]
-    return x, y
-
-
-def valida_rsa_signature(rsa_public_key, signature, data):
-    try:
-        rsa_public_key.verify(
-            signature,
-            data,
-            padding.PSS(
-                mgf=padding.MGF1(hashes.SHA256()),
-                salt_length=padding.PSS.MAX_LENGTH
-            ),
-            hashes.SHA256()
-        )
-        return True
-    except:
-        return False
-
-
-def load_cert(cert_name):
-    with open(cert_name, "rb") as cert_file:
-        return cert_file.read()
-
-
-run_client()
+main()
