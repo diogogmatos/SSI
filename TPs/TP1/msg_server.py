@@ -11,6 +11,7 @@ import validate_cert
 import os
 import json
 from datetime import datetime
+import aes_ctr
 
 
 # CONSTANTS
@@ -74,9 +75,7 @@ class ServerWorker(object):
         self.dhprivate_key = dh.DHParameterNumbers(
             p, g).parameters().generate_private_key()
         self.rsaprivate_key = None
-        # self.cert = "MSG_SERVER.crt"
         self.shared_key = None
-        self.aesgcm = None
 
         with open("MSG_SERVER.p12", "rb") as p12_file:
             (self.rsaprivate_key, self.cert, _) = serialization.pkcs12.load_key_and_certificates(
@@ -84,40 +83,90 @@ class ServerWorker(object):
                 password=None,
             )
 
+    def askqueue(self, client_id):
+        messages = []
+        json_data = {}
+        with open('database.json', 'r') as file:
+            json_data = json.load(file)
+            for key, value in json_data.items():
+                parts = key.split(":")
+                sender = parts[1]
+                for v in value:
+                    if sender == client_id and not v[1]:
+                        messages.append(v[0])
+
+        # Sort messages based on time
+        messages.sort(key=lambda x: x[0])
+        # Extract message texts
+        return messages
+
+    def get_msg(self, num):
+        with open('database.json') as file:
+            json_data = json.load(file)
+            for key, value in json_data.items():
+                msg_info = key.split(":")
+                msg_num = msg_info[0]
+                if msg_num == num:
+                    return aes_ctr.decipher(bytes.fromhex(value[0]), self.shared_key)
+
+    def store_msg(self, sender, subject, message):
+        json_data = {}
+        with open('database.json', 'r') as file:
+            json_data = json.load(file)
+
+        current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        # Generate a new message number
+        new_message_num = str(len(json_data) + 1)
+
+        # Create the new key in the format "<NUM>:<SENDER>:<TIME>:<SUBJECT>"
+        new_key = f"{new_message_num}:{sender}:{current_time}:{subject}"
+
+        # Add the new message to the JSON data
+        ciphered_message = aes_ctr.cipher(message.encode(), self.shared_key)
+        json_data[new_key] = (ciphered_message.hex(), False)
+        # Write the updated JSON data back to the file
+        with open('database.json', 'w') as file:
+            json.dump(json_data, file)
+
+        print(f"> New message from {sender} stored successfully.")
+
     def handle_commands(self, msg):
-        msg = msg.splitlines()
-        type = msg[0].decode()
-        if type == "askqueue":
-            return self.askqueue(msg[1].decode())
-        elif type == "getmsg":
-            return self.get_msg(msg[1].decode())
-        elif type == "send":
-            if len(msg) > 4:
-                msg_send = ""
-                for i in range(3, len(msg)):
-                    msg_send += msg[i].decode() + " "
-                return self.store_msg(msg[1].decode(), msg[2].decode(), msg_send)
-            else:
-                return self.store_msg(msg[1].decode(), msg[2].decode(), msg[3].decode())
+        msg = msg.decode()
+        msg = msg.split("|")
+        match msg[0]:
+            case "askqueue":
+                return "\n".join(self.askqueue(msg[1]))
+
+            case "getmsg":
+                return self.get_msg(msg[1])
+
+            case "send":
+                self.store_msg(msg[1], msg[2], msg[3])
+                return "Message sent successfully.".encode()
+
+            case _:
+                raise Exception("Unknown command.")
 
     def process(self, msg):
         """ Processa uma mensagem (`bytestring`) enviada pelo CLIENTE.
             Retorna a mensagem a transmitir como resposta (`None` para
             finalizar ligação) """
-        self.msg_cnt += 1
-        try:
-            array = self.handle_commands(msg)
-            if len(array) and isinstance(array, list) > 0:
-                concatenated_string = '\n'.join(array)
-                return concatenated_string.encode()
-            else:
-                print(array)
-                return array.encode()
 
+        # increase msg count
+        self.msg_cnt += 1
+
+        # try to process a user command
+        try:
+            return self.handle_commands(msg)
         except:
             pass
+
+        # if msg is not a command (initial messages):
+
+        # process DH key
         if msg.splitlines()[0] == b'-----BEGIN PUBLIC KEY-----':
-            print("Received public DH key.")
+            print("> Received public DH key.")
             client_dh_pub = serialization.load_pem_public_key(msg)
             # Cria o par de chaves públicas
             dh_pair = mkpair(
@@ -148,16 +197,13 @@ class ServerWorker(object):
                     format=serialization.PublicFormat.SubjectPublicKeyInfo),
                 pair1
             )
-            print("Sending public key, cert and signature.")
+            print("> Sending public key, cert and signature.")
             return pair2
 
+        # process public key, cert and signature
         if unpair(msg)[0].splitlines()[0] == b'-----BEGIN PUBLIC KEY-----':
-
-            print("Received public key, cert and signature.")
-            print(unpair(msg)[0])
+            print("> Received public key, cert and signature.")
             server_dh_pub = serialization.load_pem_public_key(unpair(msg)[0])
-            print(unpair(unpair(msg)[1]))
-            print(server_dh_pub)
             signature, cert_name = unpair(unpair(msg)[1])
             cert_name = cert_name.decode()
 
@@ -165,9 +211,9 @@ class ServerWorker(object):
             cert = x509.load_pem_x509_certificate(cert_name.encode())
 
             if not validate_cert.valida_cert(cert, "User 1 (SSI MSG Relay Client 1)"):
-                print("Certicate is not valid")
+                print("✗ Certicate is not valid")
                 return -1
-            print("Certificate is valid")
+            print("✓ Certificate is valid")
 
             server_rsa_public_key = cert.public_key()
 
@@ -183,9 +229,9 @@ class ServerWorker(object):
             )
 
             if not validate_rsa_signature(server_rsa_public_key, signature, dh_pair):
-                print("Signature is not valid")
+                print("✗ Signature is not valid")
                 return -1
-            print("Signature is valid")
+            print("✓ Signature is valid")
 
             # Gera a chave partilhada
             shared_key = self.dhprivate_key.exchange(server_dh_pub)
@@ -196,85 +242,7 @@ class ServerWorker(object):
                 info=b'handshake data',
             ).derive(shared_key)
 
-            # Inicializa o AESGCM
-            self.aesgcm = AESGCM(self.shared_key)
-            print("AESGCM initialized.")
-
-            nonce = os.urandom(12)
-            ciphertext = nonce + self.aesgcm.encrypt(nonce, "".encode(), None)
-
-            return ciphertext
-
-        if self.aesgcm is None:
-            return "".encode()
-
-        nonce = msg[:12]
-        ciphertext = msg[12:]
-        msg = self.aesgcm.decrypt(nonce, ciphertext, None)
-
-        txt = msg.decode()
-        print('%d : %r' % (self.id, txt))
-
-        if not txt:
-            return -1
-
-        new_msg = txt.upper().encode()
-
-        nonce = os.urandom(12)
-        ciphertext = nonce + self.aesgcm.encrypt(nonce, new_msg, None)
-
-        return ciphertext if len(ciphertext) > 0 else None
-
-    def askqueue(self, client_id):
-        messages = []
-        json_data = {}
-        with open('database.json', 'r') as file:
-            json_data = json.load(file)
-            for key, value in json_data.items():
-                parts = key.split(":")
-                sender = parts[1]
-                for v in value:
-                    if sender == client_id and not v[1]:
-                        messages.append(v[0])
-
-        # Sort messages based on time
-        messages.sort(key=lambda x: x[0])
-        # Extract message texts
-        return messages
-
-    def get_msg(self, num):
-        with open('database.json', 'r') as file:
-            json_data = json.load(file)
-            for key, value in json_data.items():
-                parts = key.split(":")
-                message_num = parts[0]
-                if message_num == num:
-                    return value[0][0]
-
-    def store_msg(self, sender, subject, message):
-        try:
-            json_data = {}
-            with open('database.json', 'r') as file:
-                json_data = json.load(file)
-
-            current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-            # Generate a new message number
-            new_message_num = str(len(json_data) + 1)
-
-            # Create the new key in the format "<NUM>:<SENDER>:<TIME>:<SUBJECT>"
-            new_key = f"{new_message_num}:{sender}:{current_time}:{subject}"
-
-            # Add the new message to the JSON data
-            json_data[new_key] = (message, False)
-
-            # Write the updated JSON data back to the file
-            with open('database.json', 'w') as file:
-                json.dump(json_data, file)
-
-            print("Message stored successfully.")
-        except:
-            print("Error storing message.")
+            print("> Shared key generated.")
 
 
 # MAIN FUNCTIONALITY
@@ -282,22 +250,40 @@ class ServerWorker(object):
 
 async def handle_echo(reader, writer):
     global conn_cnt
+
+    # increase connection count
     conn_cnt += 1
+    print("✓ New connection established:", conn_cnt)
+
+    # initialize server worker
     addr = writer.get_extra_info('peername')
     srvwrk = ServerWorker(conn_cnt, addr)
+
+    # read first message
     data = await reader.read(max_msg_size)
-    while True:
-        if not data:
-            continue
-        if data[:1] == b'\n':
-            break
-        data = srvwrk.process(data)
-        if data == -1:
-            break
-        writer.write(data)
-        await writer.drain()
+    while data and data != -1 and data[:1] != b'\n':
+        # decipher received data
+        if srvwrk.shared_key != None:
+            data = aes_ctr.decipher(data, srvwrk.shared_key)
+
+        # process data and get a response
+        res = srvwrk.process(data)
+
+        # send response
+        if res != None:
+            # cipher response
+            if srvwrk.shared_key != None:
+                res = aes_ctr.cipher(res, srvwrk.shared_key)
+
+            writer.write(res)
+            await writer.drain()
+            print("> Sent response.")
+
+        # wait for next message
+        print("> Waiting for next message...")
         data = await reader.read(max_msg_size)
-    print("[%d]" % srvwrk.id)
+
+    print(f"✗ Connection closed: {srvwrk.id}")
     writer.close()
 
 
@@ -308,6 +294,7 @@ def main():
     loop = asyncio.new_event_loop()
     coro = asyncio.start_server(handle_echo, '127.0.0.1', conn_port)
     server = loop.run_until_complete(coro)
+
     # Serve requests until Ctrl+C is pressed
     print('Serving on {}'.format(server.sockets[0].getsockname()))
     print('  (type ^C to finish)\n')
@@ -315,11 +302,12 @@ def main():
         loop.run_forever()
     except KeyboardInterrupt:
         pass
+
     # Close the server
     server.close()
     loop.run_until_complete(server.wait_closed())
     loop.close()
-    print('\nFINISHED!')
+    print('\b\bClosing server...')
 
 
 main()

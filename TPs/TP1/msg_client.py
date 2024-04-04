@@ -10,6 +10,7 @@ from cryptography import x509
 from cryptography.hazmat.primitives.asymmetric import padding
 import validate_cert
 import os
+import aes_ctr
 
 # CONSTANTS
 
@@ -19,11 +20,6 @@ p = 0xFFFFFFFFFFFFFFFFC90FDAA22168C234C4C6628B80DC1CD129024E088A67CC74020BBEA63B
 g = 2
 ca_cert = x509.load_pem_x509_certificate(open("MSG_CLI1.crt", "rb").read())
 end = 0
-
-
-# def load_cert(cert_name):
-#     with open(cert_name, "rb") as cert_file:
-#         return cert_file.read()
 
 
 # CLIENT
@@ -71,7 +67,6 @@ class Client:
             p, g).parameters().generate_private_key()
         self.rsaprivate_key = None
         self.shared_key = None
-        self.aesgcm = None
         file = f"{user_data}.p12"
         with open(file, "rb") as p12_file:
             (self.rsaprivate_key, self.cert, _) = serialization.pkcs12.load_key_and_certificates(
@@ -81,124 +76,98 @@ class Client:
         # pkcs12 load_key_and_certificates , ficheiro e a passe None
         # passe server 1234
 
-    def process(self, msg=b""):
-        """ Processa uma mensagem (`bytestring`) enviada pelo SERVIDOR.
-            Retorna a mensagem a transmitir como resposta (`None` para
-            finalizar ligação) """
+    def dh_key(self):
         self.msg_cnt += 1
-        if not msg and self.msg_cnt == 1:
-            publicKey = self.dhprivate_key.public_key()
-            pem = publicKey.public_bytes(
+
+        publicKey = self.dhprivate_key.public_key()
+        pem = publicKey.public_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PublicFormat.SubjectPublicKeyInfo
+        )
+        return pem
+
+    def process_server_info(self, server_info):
+        self.msg_cnt += 1
+
+        server_dh_pub = serialization.load_pem_public_key(
+            unpair(server_info)[0])
+        signature, cert_name = unpair(unpair(server_info)[1])
+        cert_name = cert_name.decode()
+
+        # Verifica o certificado
+
+        cert = x509.load_pem_x509_certificate(cert_name.encode())
+
+        if not validate_cert.valida_cert(cert, "Server"):
+            print("✗ Certicate is not valid")
+            return None
+        print("✓ Certificate is valid")
+
+        server_rsa_public_key = cert.public_key()
+
+        # Verifica a assinatura
+
+        dh_pair = mkpair(
+            server_dh_pub.public_bytes(
                 encoding=serialization.Encoding.PEM,
                 format=serialization.PublicFormat.SubjectPublicKeyInfo
-            )
-            print("Sending public DH key.")
-            return pem
-        split = unpair(msg)[0].splitlines()
-        if len(split) > 0 and unpair(msg)[0].splitlines()[0] == b'-----BEGIN PUBLIC KEY-----':
-            print("Received public key, cert and signature.")
-            server_dh_pub = serialization.load_pem_public_key(unpair(msg)[0])
-            signature, cert_name = unpair(unpair(msg)[1])
-            cert_name = cert_name.decode()
-            # Verifica o certificado
-            cert = x509.load_pem_x509_certificate(cert_name.encode())
+            ),
+            self.dhprivate_key.public_key().public_bytes(
+                encoding=serialization.Encoding.PEM,
+                format=serialization.PublicFormat.SubjectPublicKeyInfo)
+        )
 
-            # print(validate_cert.valida_cert(cert_name, "Server"))
-            # print(cert_name)
-            if not validate_cert.valida_cert(cert, "Server"):
-                print("Certicate is not valid")
-                return None
-            print("Certificate is valid")
+        if not validate_rsa_signature(server_rsa_public_key, signature, dh_pair):
+            print("✗ Signature is not valid")
+            return None
+        print("✓ Signature is valid")
 
-            server_rsa_public_key = cert.public_key()
+        # Gera a chave partilhada
 
-            # Verifica a assinatura
-            dh_pair = mkpair(
-                server_dh_pub.public_bytes(
+        shared_key = self.dhprivate_key.exchange(server_dh_pub)
+        self.shared_key = HKDF(
+            algorithm=hashes.SHA256(),
+            length=32,
+            salt=None,
+            info=b'handshake data',
+        ).derive(shared_key)
+
+        print("> Shared key generated.")
+
+        # Devolve ao servidor a chave pública, certificado e assinatura
+
+        signature = self.rsaprivate_key.sign(
+            mkpair(
+                self.dhprivate_key.public_key().public_bytes(
                     encoding=serialization.Encoding.PEM,
                     format=serialization.PublicFormat.SubjectPublicKeyInfo
                 ),
-                self.dhprivate_key.public_key().public_bytes(
+                server_dh_pub.public_bytes(
                     encoding=serialization.Encoding.PEM,
-                    format=serialization.PublicFormat.SubjectPublicKeyInfo)
-            )
+                    format=serialization.PublicFormat.SubjectPublicKeyInfo
+                )
+            ),
+            padding.PSS(
+                mgf=padding.MGF1(hashes.SHA256()),
+                salt_length=padding.PSS.MAX_LENGTH
+            ),
+            hashes.SHA256()
+        )
 
-            if not validate_rsa_signature(server_rsa_public_key, signature, dh_pair):
-                print("Signature is not valid")
-                return None
-            print("Signature is valid")
+        pair1 = mkpair(signature, self.cert.public_bytes(
+            encoding=serialization.Encoding.PEM))
+        pair2 = mkpair(
+            self.dhprivate_key.public_key().public_bytes(
+                encoding=serialization.Encoding.PEM,
+                format=serialization.PublicFormat.SubjectPublicKeyInfo),
+            pair1
+        )
 
-            # Gera a chave partilhada
-            shared_key = self.dhprivate_key.exchange(server_dh_pub)
-            self.shared_key = HKDF(
-                algorithm=hashes.SHA256(),
-                length=32,
-                salt=None,
-                info=b'handshake data',
-            ).derive(shared_key)
-
-            # Inicializa o AESGCM
-            self.aesgcm = AESGCM(self.shared_key)
-            print("AESGCM initialized.")
-
-            # Devolve ao servidor a chave pública, certificado e assinatura
-            signature = self.rsaprivate_key.sign(
-                mkpair(
-                    self.dhprivate_key.public_key().public_bytes(
-                        encoding=serialization.Encoding.PEM,
-                        format=serialization.PublicFormat.SubjectPublicKeyInfo
-                    ),
-                    server_dh_pub.public_bytes(
-                        encoding=serialization.Encoding.PEM,
-                        format=serialization.PublicFormat.SubjectPublicKeyInfo
-                    )
-                ),
-                padding.PSS(
-                    mgf=padding.MGF1(hashes.SHA256()),
-                    salt_length=padding.PSS.MAX_LENGTH
-                ),
-                hashes.SHA256()
-            )
-
-            pair1 = mkpair(signature, self.cert.public_bytes(
-                encoding=serialization.Encoding.PEM))
-            pair2 = mkpair(
-                self.dhprivate_key.public_key().public_bytes(
-                    encoding=serialization.Encoding.PEM,
-                    format=serialization.PublicFormat.SubjectPublicKeyInfo),
-                pair1
-            )
-            print("Sending public key, cert and signature.")
-            return pair2
-
-        if not (len(split) > 0 and msg.splitlines()[0] == b'-----BEGIN PUBLIC KEY-----') and msg:
-            nonce = msg[:12]
-            ciphertext = msg[12:]
-            msg = self.aesgcm.decrypt(nonce, ciphertext, None)
-
-        print('Received (%d): %r' % (self.msg_cnt, msg.decode()))
-        print('Input message to send (empty to finish)')
-        new_msg = input().encode()
-
-        nonce = os.urandom(12)
-        ciphertext = nonce + self.aesgcm.encrypt(nonce, new_msg, None)
-
-        return ciphertext if len(ciphertext) > 0 else None
-
-    def send_msg(self, args):
-        """
-        Send a message to the server.
-        """
-        # msg = self.process(args)
-        msg = f'send {args.uid} {args.subject}\n'
-        # self.writer.write(f'send {uid} {subject} {message}\n'.encode())
-        # await self.writer.drain()
-        # return message.encode()
-        return msg
+        return pair2
 
 
 # MAIN FUNCTIONALITY
-    
+
 
 def help():
     """
@@ -215,24 +184,8 @@ def help():
     return None
 
 
-def handle_commands(client, args):
-    if args.command == 'send':
-        return f"send {args.uid} {args.subject}\n"
-    elif args.command == "-user":
-        client.userdata_file = args.userdata
-    elif args.command == 'askqueue':
-        # client.ask_queue()
-        pass
-    elif args.command == 'getmsg':
-        # client.get_msg(args.uid)
-        pass
-    elif args.command == 'help':
-        help()
-    else:
-        print("Not valid")
-
-
 async def tcp_echo_client():
+    # parse arguments
     parser = argparse.ArgumentParser(description='Client for TCP Echo Server')
     parser.add_argument('-user', dest='userdata', default='MSG_CLI1',
                         help='Specify user data file (default: userdata.p12)')
@@ -244,42 +197,72 @@ async def tcp_echo_client():
                         help='Number of the message')
     args = parser.parse_args()
     user_data = args.userdata
+
+    # open connection
     reader, writer = await asyncio.open_connection('127.0.0.1', conn_port)
+
+    # initialize client
     addr = writer.get_extra_info('peername')
     client = Client(user_data, addr)
-    text = handle_commands(client, args)
-    msg = client.process()
-    writer.write(msg)
-    msg = await reader.read(max_msg_size)
-    if msg:
-        msg = client.process(msg)
+
+    # send public DH key to server
+    writer.write(client.dh_key())
+    print("> Sent public DH key.")
+
+    # receive public key, cert and signature from server
+    server_info = await reader.read(max_msg_size)
+    print("> Received public key, cert and signature.")
+
+    # process server info
+    client_info = client.process_server_info(server_info)
+
+    # send public key, cert and signature to server
+    writer.write(client_info)
+    print("> Sent public key, cert and signature.")
+
     match args.command:
         case 'send':
-            if text != None:
-                msg_send = str(
-                    input("Input message to send (empty to finish): "))
-                text = text.strip()
-                result = text + " " + msg_send + "\n"
-                result = "\n".join(result.split())
-                writer.write(result.encode())
-                while msg:
-                    # msg = await reader.read(max_msg_size)
-                    if msg:
-                        msg = client.process(msg)
-                    else:
-                        break
+            # get message to send from user
+            msg_send = input("> Input message to send: ")
+
+            # send message to server
+            writer.write(aes_ctr.cipher(
+                f"send|{args.uid}|{args.subject}|{msg_send}".encode(), client.shared_key))
+
+            # receive response from server
+            output = await reader.read(max_msg_size)
+
+            # print response
+            print(aes_ctr.decipher(output, client.shared_key).decode())
+
         case 'askqueue':
-            linha = f"askqueue\n{args.userdata}\n"
-            writer.write(bytes(linha, 'utf-8'))
+            # send message to server
+            writer.write(aes_ctr.cipher(
+                f"askqueue|{args.userdata}".encode(), client.shared_key))
+            # receive response from server
             output = await reader.read(max_msg_size)
-            print(output.decode())
+            # print response
+            print(aes_ctr.decipher(output, client.shared_key).decode())
+
         case 'getmsg':
-            linha = f"getmsg\n{args.uid}\n"
-            writer.write(bytes(linha, 'utf-8'))
+            # send message to server
+            writer.write(aes_ctr.cipher(
+                f"getmsg|{args.uid}".encode(), client.shared_key))
+            # receive response from server
             output = await reader.read(max_msg_size)
-            print(output.decode())
-    writer.write(b'\n')
-    print('Socket closed!')
+            # print response
+            print(aes_ctr.decipher(output, client.shared_key).decode())
+
+        case "help":
+            help()
+
+        case "-user":
+            client.userdata_file = args.userdata
+
+        case _:
+            print("Invalid command. Use 'help' to see the available commands.")
+
+    print('Closing connection...')
     writer.close()
 
 
