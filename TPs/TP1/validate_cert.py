@@ -70,7 +70,6 @@ def valida_cert(cert, subject):
         #     ],
         # )
     except:
-        print("Certificate is invalid!")
         return False
 
     return True

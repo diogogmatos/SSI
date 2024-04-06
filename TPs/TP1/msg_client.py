@@ -10,7 +10,7 @@ from cryptography import x509
 from cryptography.hazmat.primitives.asymmetric import padding
 import validate_cert
 import sys
-import aes_ctr
+import aes_gcm
 
 # CONSTANTS
 
@@ -18,7 +18,8 @@ conn_port = 8443
 max_msg_size = 9999
 p = 0xFFFFFFFFFFFFFFFFC90FDAA22168C234C4C6628B80DC1CD129024E088A67CC74020BBEA63B139B22514A08798E3404DDEF9519B3CD3A431B302B0A6DF25F14374FE1356D6D51C245E485B576625E7EC6F44C42E9A637ED6B0BFF5CB6F406B7EDEE386BFB5A899FA5AE9F24117C4B1FE649286651ECE45B3DC2007CB8A163BF0598DA48361C55D39A69163FA8FD24CF5F83655D23DCA3AD961C62F356208552BB9ED529077096966D670C354E4ABC9804F1746C08CA18217C32905E462E36CE3BE39E772C180E86039B2783A2EC07A28FB5C55DF06F4C52C9DE2BCBF6955817183995497CEA956AE515D2261898FA051015728E5A8AACAA68FFFFFFFFFFFFFFFF
 g = 2
-ca_cert = x509.load_pem_x509_certificate(open("projCA/certs/MSG_CLI1.crt", "rb").read())
+ca_cert = x509.load_pem_x509_certificate(
+    open("projCA/certs/MSG_CLI1.crt", "rb").read())
 end = 0
 
 
@@ -64,7 +65,7 @@ class Client:
         self.sckt = sckt
         self.msg_cnt = 0
         self.dhprivate_key = dh.DHParameterNumbers(
-            p, g).parameters().generate_private_key()        
+            p, g).parameters().generate_private_key()
         self.rsaprivate_key = None
         self.shared_key = None
         self.user_data_file = f"{user_data}.p12"
@@ -136,6 +137,8 @@ class Client:
 
         # Devolve ao servidor a chave pública, certificado e assinatura
 
+        # cert + assinatura com mensagem
+
         signature = self.rsaprivate_key.sign(
             mkpair(
                 self.dhprivate_key.public_key().public_bytes(
@@ -154,19 +157,23 @@ class Client:
             hashes.SHA256()
         )
 
-        pair1 = mkpair(signature, self.cert.public_bytes(
+        sig_cert = mkpair(signature, self.cert.public_bytes(
             encoding=serialization.Encoding.PEM))
-        pair2 = mkpair(
+        pubkey_sig_cert = mkpair(
             self.dhprivate_key.public_key().public_bytes(
                 encoding=serialization.Encoding.PEM,
                 format=serialization.PublicFormat.SubjectPublicKeyInfo),
-            pair1
+            sig_cert
         )
 
-        return pair2
+        return pubkey_sig_cert
 
 
 # MAIN FUNCTIONALITY
+
+
+def wrap_message(client: Client, msg: bytes):
+    return aes_gcm.cipher(msg, client.shared_key)
 
 
 async def tcp_echo_client():
@@ -211,35 +218,38 @@ async def tcp_echo_client():
 
             # check message length
             if sys.getsizeof(msg_send) > 1000:
-                raise ValueError("The message is too long. Maximum size is 1000 bytes.")
+                raise ValueError(
+                    "The message is too long. Maximum size is 1000 bytes.")
 
             # send message to server
-            writer.write(aes_ctr.cipher(
-                f"send|{args.uid_num}|{args.subject}|{msg_send}".encode(), client.shared_key))
+            writer.write(wrap_message(
+                client, f"send|{args.uid_num}|{args.subject}|{msg_send}".encode()))
 
             # receive response from server
             output = await reader.read(max_msg_size)
 
             # print response
-            print(aes_ctr.decipher(output, client.shared_key).decode())
+            print(aes_gcm.decipher(output, client.shared_key).decode())
 
         case 'askqueue':
             # send message to server
-            writer.write(aes_ctr.cipher(
-                f"askqueue|{args.userdata}".encode(), client.shared_key))
+            writer.write(wrap_message(
+                client, f"askqueue|{args.userdata}".encode()))
             # receive response from server
             output = await reader.read(max_msg_size)
             # print response
-            print(f"> Unread messages:\n\n{aes_ctr.decipher(output, client.shared_key).decode()}\n")
+            print(
+                f"> Unread messages:\n\n{aes_gcm.decipher(output, client.shared_key).decode()}\n")
 
         case 'getmsg':
             # send message to server
-            writer.write(aes_ctr.cipher(
-                f"getmsg|{args.uid_num}".encode(), client.shared_key))
+            writer.write(wrap_message(
+                client, f"getmsg|{args.uid_num}".encode()))
             # receive response from server
             output = await reader.read(max_msg_size)
             # print response
-            print(f"> Here's message {args.uid_num}:\n\n{aes_ctr.decipher(output, client.shared_key).decode()}\n")
+            print(
+                f"> Here's message {args.uid_num}:\n\n{aes_gcm.decipher(output, client.shared_key).decode()}\n")
 
         case "-user":
             client.user_data_file = args.userdata

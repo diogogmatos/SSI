@@ -10,7 +10,7 @@ from cryptography import x509
 import validate_cert
 import bson
 from datetime import datetime
-import aes_ctr
+import aes_gcm
 import os
 
 
@@ -34,6 +34,7 @@ ca_cert = x509.load_pem_x509_certificate(
 # SERVER
 
 
+# chave publica que esta no certificado, assinatura e dados que é suposto estarem assinados
 def validate_rsa_signature(rsa_public_key, signature, data):
     try:
         rsa_public_key.verify(
@@ -96,7 +97,7 @@ class ServerWorker(object):
         # extract message texts
         with open("database.bson", "rb") as file:
             # decipher file data
-            data = aes_ctr.decipher(file.read(), self.database_key)
+            data = aes_gcm.decipher(file.read(), self.database_key)
             # decod data as BSON
             bson_data = bson.BSON(data).decode()
             for key, value in bson_data.items():
@@ -121,7 +122,7 @@ class ServerWorker(object):
         # open file and get message
         with open("database.bson", "rb") as file:
             # decipher file data
-            data = aes_ctr.decipher(file.read(), self.database_key)
+            data = aes_gcm.decipher(file.read(), self.database_key)
             # decode data as BSON
             bson_data = bson.BSON(data).decode()
             
@@ -137,7 +138,7 @@ class ServerWorker(object):
         
         # update file with message marked as read
         with open("database.bson", "wb") as file:
-            file.write(aes_ctr.cipher(bson.BSON.encode(bson_data), self.database_key))
+            file.write(aes_gcm.cipher(bson.BSON.encode(bson_data), self.database_key))
 
         return r
 
@@ -148,13 +149,13 @@ class ServerWorker(object):
         if not os.path.exists("database.bson"):
             with open('database.bson', 'xb') as file:
                 # store ciphered empty BSON data
-                file.write(aes_ctr.cipher(bson.BSON.encode({}), self.database_key))
+                file.write(aes_gcm.cipher(bson.BSON.encode({}), self.database_key))
         
         # open existing database file
         else:            
             with open('database.bson', 'rb') as file:
                 # decipher file data
-                data = aes_ctr.decipher(file.read(), self.database_key)
+                data = aes_gcm.decipher(file.read(), self.database_key)
                 # decode data as BSON
                 bson_data = bson.BSON(data).decode()
 
@@ -165,7 +166,6 @@ class ServerWorker(object):
 
         # create the new key in the format "<NUM>:<SENDER>:<TIME>:<SUBJECT>"
         new_key = f"{new_message_num}|{sender}|{current_time}|{subject}"
-        print(new_key)
 
         # add the new message to the BSON data
         bson_data[new_key] = message, False
@@ -173,7 +173,7 @@ class ServerWorker(object):
         # write the updated BSON data back to the file
         with open('database.bson', 'wb') as file:
             # store ciphered data
-            file.write(aes_ctr.cipher(bson.BSON.encode(bson_data), self.database_key))
+            file.write(aes_gcm.cipher(bson.BSON.encode(bson_data), self.database_key))
 
         print(f"> New message to {sender} stored successfully.")
 
@@ -317,7 +317,7 @@ async def handle_echo(reader, writer):
     while data and data != -1 and data[:1] != b'\n':
         # decipher received data
         if srvwrk.shared_key != None:
-            data = aes_ctr.decipher(data, srvwrk.shared_key)
+            data = aes_gcm.decipher(data, srvwrk.shared_key)
 
         # process data and get a response
         res = srvwrk.process(data)
@@ -326,7 +326,7 @@ async def handle_echo(reader, writer):
         if res != None:
             # cipher response
             if srvwrk.shared_key != None:
-                res = aes_ctr.cipher(res, srvwrk.shared_key)
+                res = aes_gcm.cipher(res, srvwrk.shared_key)
 
             writer.write(res)
             await writer.drain()
