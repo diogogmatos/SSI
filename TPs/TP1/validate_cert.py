@@ -48,7 +48,7 @@ def valida_cert(cert, subject):
     try:
         # print(cert.public_bytes(encoding=serialization.Encoding.PEM))
         # obs: pressupõe que a cadeia de certifica só contém 2 níveis
-        cert.verify_directly_issued_by(cert_load("MSG_CA.crt"))
+        cert.verify_directly_issued_by(cert_load("projCA/certs/MSG_CA.crt"))
         # verificar período de validade...
         try:
             cert_validtime(cert)
@@ -70,7 +70,6 @@ def valida_cert(cert, subject):
         #     ],
         # )
     except:
-        print("Certificate is invalid!")
         return False
 
     return True

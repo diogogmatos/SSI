@@ -8,9 +8,13 @@ from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import padding
 from cryptography import x509
 import validate_cert
-import os
-import json
+import bson
 from datetime import datetime
+import aes_gcm
+import os
+import msg_serialization
+from typing import Dict
+import sys
 
 
 # CONSTANTS
@@ -21,17 +25,16 @@ conn_port = 8443
 max_msg_size = 9999
 p = 0xFFFFFFFFFFFFFFFFC90FDAA22168C234C4C6628B80DC1CD129024E088A67CC74020BBEA63B139B22514A08798E3404DDEF9519B3CD3A431B302B0A6DF25F14374FE1356D6D51C245E485B576625E7EC6F44C42E9A637ED6B0BFF5CB6F406B7EDEE386BFB5A899FA5AE9F24117C4B1FE649286651ECE45B3DC2007CB8A163BF0598DA48361C55D39A69163FA8FD24CF5F83655D23DCA3AD961C62F356208552BB9ED529077096966D670C354E4ABC9804F1746C08CA18217C32905E462E36CE3BE39E772C180E86039B2783A2EC07A28FB5C55DF06F4C52C9DE2BCBF6955817183995497CEA956AE515D2261898FA051015728E5A8AACAA68FFFFFFFFFFFFFFFF
 g = 2
-ca_cert = x509.load_pem_x509_certificate(open("MSG_SERVER.crt", "rb").read())
+ca_cert = x509.load_pem_x509_certificate(
+    open("projCA/certs/MSG_SERVER.crt", "rb").read())
 
-
-# def load_cert(cert_name):
-#     with open(cert_name, "rb") as cert_file:
-#         return cert_file.read()
+serializer = msg_serialization.Serializer()
 
 
 # SERVER
 
 
+# chave publica que esta no certificado, assinatura e dados que é suposto estarem assinados
 def validate_rsa_signature(rsa_public_key, signature, data):
     try:
         rsa_public_key.verify(
@@ -48,21 +51,6 @@ def validate_rsa_signature(rsa_public_key, signature, data):
         return False
 
 
-def mkpair(x, y):
-    """ produz uma byte-string contendo o tuplo '(x,y)' ('x' e 'y' são byte-strings) """
-    len_x = len(x)
-    len_x_bytes = len_x.to_bytes(2, 'little')
-    return len_x_bytes + x + y
-
-
-def unpair(xy):
-    """ extrai componentes de um par codificado com 'mkpair' """
-    len_x = int.from_bytes(xy[:2], 'little')
-    x = xy[2:len_x+2]
-    y = xy[len_x+2:]
-    return x, y
-
-
 class ServerWorker(object):
     """ Classe que implementa a funcionalidade do SERVIDOR. """
 
@@ -73,54 +61,153 @@ class ServerWorker(object):
         self.msg_cnt = 0
         self.dhprivate_key = dh.DHParameterNumbers(
             p, g).parameters().generate_private_key()
+        # generate a 256 bits key from the private key to cipher database data with AES_CTR
+        self.database_key = self.dhprivate_key.private_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PrivateFormat.PKCS8,
+            encryption_algorithm=serialization.NoEncryption()
+        )[:32]
         self.rsaprivate_key = None
-        # self.cert = "MSG_SERVER.crt"
         self.shared_key = None
-        self.aesgcm = None
 
-        with open("MSG_SERVER.p12", "rb") as p12_file:
+        with open("projCA/certs/MSG_SERVER.p12", "rb") as p12_file:
             (self.rsaprivate_key, self.cert, _) = serialization.pkcs12.load_key_and_certificates(
                 p12_file.read(),
                 password=None,
             )
 
+    def askqueue(self, uid: str):
+        messages = []
+
+        # extract message texts
+        with open("database.bson", "rb") as file:
+            # decipher file data
+            data = aes_gcm.decipher(file.read(), self.database_key)
+            # decod data as BSON
+            bson_data: Dict[str, tuple[bytes, bool]] = bson.BSON(data).decode()
+            for key, value in bson_data.items():
+                msg_info = key.split("|")
+                msg_receiver = msg_info[2]
+                if msg_receiver == uid and not value[1]:
+                    messages.append(key.replace("|", ":"))
+
+        # check if there are no messages
+        if not messages:
+            return "No unread messages found.".encode()
+
+        # sort messages based on time
+        messages.sort(key=lambda x: x[0])
+
+        return "\n".join(messages).encode()
+
+    def get_msg(self, num, uid):
+        r: bytes = b''
+        bson_data = {}
+
+        # open file and get message
+        with open("database.bson", "rb") as file:
+            # decipher file data
+            data = aes_gcm.decipher(file.read(), self.database_key)
+            # decode data as BSON
+            bson_data: Dict[str, tuple[bytes, bool]] = bson.BSON(data).decode()
+
+            # find requested message
+            for key, value in bson_data.items():
+                msg_info = key.split("|")
+                msg_num = msg_info[0]
+                msg_receiver = msg_info[2]
+                if msg_num == num and msg_receiver == uid:
+                    if not value[1]:
+                        value[1] = True
+                        print(f"> Message {num} marked as read.")
+                    r = value[0]
+
+        # update file with message marked as read
+        with open("database.bson", "wb") as file:
+            file.write(aes_gcm.cipher(
+                bson.BSON.encode(bson_data), self.database_key))
+
+        return r
+
+    def store_msg(self, sender, receiver, subject, message):
+        bson_data = {}
+
+        # create database file if it doesn't exist
+        if not os.path.exists("database.bson"):
+            with open('database.bson', 'xb') as file:
+                # store ciphered empty BSON data
+                file.write(aes_gcm.cipher(
+                    bson.BSON.encode({}), self.database_key))
+
+        # open existing database file
+        else:
+            with open('database.bson', 'rb') as file:
+                # decipher file data
+                data = aes_gcm.decipher(file.read(), self.database_key)
+                # decode data as BSON
+                bson_data: Dict[str, tuple[bytes, bool]
+                                ] = bson.BSON(data).decode()
+
+        current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        # generate a new message number
+        new_message_num = str(len(bson_data) + 1)
+
+        # create the new key in the format "<NUM>|<SENDER>|<RECEIVER>|<TIME>|<SUBJECT>"
+        new_key = f"{new_message_num}|{sender}|{receiver}|{current_time}|{subject}"
+
+        # add the new message to the BSON data
+        bson_data[new_key] = message, False
+
+        # write the updated BSON data back to the file
+        with open('database.bson', 'wb') as file:
+            # store ciphered data
+            file.write(aes_gcm.cipher(
+                bson.BSON.encode(bson_data), self.database_key))
+
+        print(f"> New message to {sender} stored successfully.")
+
     def handle_commands(self, msg):
-        msg = msg.splitlines()
-        type = msg[0].decode()
-        if type == "askqueue":
-            return self.askqueue(msg[1].decode())
-        elif type == "getmsg":
-            return self.get_msg(msg[1].decode())
-        elif type == "send":
-            if len(msg) > 4:
-                msg_send = ""
-                for i in range(3, len(msg)):
-                    msg_send += msg[i].decode() + " "
-                return self.store_msg(msg[1].decode(), msg[2].decode(), msg_send)
-            else:
-                return self.store_msg(msg[1].decode(), msg[2].decode(), msg[3].decode())
+        try:
+            msg = serializer.deserialize(msg)
+        except:
+            return None
+
+        match msg[0]:
+            case "askqueue":
+                return self.askqueue(msg[1])
+
+            case "getmsg":
+                return self.get_msg(msg[1], msg[2])
+
+            case "send":
+                self.store_msg(msg[1], msg[2], msg[3], msg[4])
+                return "Message sent successfully.".encode()
+
+            case _:
+                return None
 
     def process(self, msg):
         """ Processa uma mensagem (`bytestring`) enviada pelo CLIENTE.
             Retorna a mensagem a transmitir como resposta (`None` para
             finalizar ligação) """
-        self.msg_cnt += 1
-        try:
-            array = self.handle_commands(msg)
-            if len(array) and isinstance(array, list) > 0:
-                concatenated_string = '\n'.join(array)
-                return concatenated_string.encode()
-            else:
-                print(array)
-                return array.encode()
 
-        except:
-            pass
+        # increase msg count
+        self.msg_cnt += 1
+
+        # try to process a user command
+        r = self.handle_commands(msg)
+        if r != None:
+            return r
+
+        # if msg is not a command (initial messages):
+
+        # process DH key
         if msg.splitlines()[0] == b'-----BEGIN PUBLIC KEY-----':
-            print("Received public DH key.")
+            print("> Received public DH key.")
             client_dh_pub = serialization.load_pem_public_key(msg)
             # Cria o par de chaves públicas
-            dh_pair = mkpair(
+            dh_pair = msg_serialization.mkpair(
                 self.dhprivate_key.public_key().public_bytes(
                     encoding=serialization.Encoding.PEM,
                     format=serialization.PublicFormat.SubjectPublicKeyInfo
@@ -140,39 +227,38 @@ class ServerWorker(object):
                 hashes.SHA256()
             )
 
-            pair1 = mkpair(signature, self.cert.public_bytes(
+            pair1 = msg_serialization.mkpair(signature, self.cert.public_bytes(
                 encoding=serialization.Encoding.PEM))
-            pair2 = mkpair(
+            pair2 = msg_serialization.mkpair(
                 self.dhprivate_key.public_key().public_bytes(
                     encoding=serialization.Encoding.PEM,
                     format=serialization.PublicFormat.SubjectPublicKeyInfo),
                 pair1
             )
-            print("Sending public key, cert and signature.")
+            print("> Sending public key, cert and signature.")
             return pair2
 
-        if unpair(msg)[0].splitlines()[0] == b'-----BEGIN PUBLIC KEY-----':
-
-            print("Received public key, cert and signature.")
-            print(unpair(msg)[0])
-            server_dh_pub = serialization.load_pem_public_key(unpair(msg)[0])
-            print(unpair(unpair(msg)[1]))
-            print(server_dh_pub)
-            signature, cert_name = unpair(unpair(msg)[1])
+        # process public key, cert and signature
+        if msg_serialization.unpair(msg)[0].splitlines()[0] == b'-----BEGIN PUBLIC KEY-----':
+            print("> Received public key, cert and signature.")
+            server_dh_pub = serialization.load_pem_public_key(
+                msg_serialization.unpair(msg)[0])
+            signature, cert_name = msg_serialization.unpair(
+                msg_serialization.unpair(msg)[1])
             cert_name = cert_name.decode()
 
             # Verifica o certificado
             cert = x509.load_pem_x509_certificate(cert_name.encode())
 
             if not validate_cert.valida_cert(cert, "User 1 (SSI MSG Relay Client 1)"):
-                print("Certicate is not valid")
+                print("✗ Certicate is not valid")
                 return -1
-            print("Certificate is valid")
+            print("✓ Certificate is valid")
 
             server_rsa_public_key = cert.public_key()
 
             # Verifica a assinatura
-            dh_pair = mkpair(
+            dh_pair = msg_serialization.mkpair(
                 server_dh_pub.public_bytes(
                     encoding=serialization.Encoding.PEM,
                     format=serialization.PublicFormat.SubjectPublicKeyInfo
@@ -183,9 +269,9 @@ class ServerWorker(object):
             )
 
             if not validate_rsa_signature(server_rsa_public_key, signature, dh_pair):
-                print("Signature is not valid")
+                print("✗ Signature is not valid")
                 return -1
-            print("Signature is valid")
+            print("✓ Signature is valid")
 
             # Gera a chave partilhada
             shared_key = self.dhprivate_key.exchange(server_dh_pub)
@@ -196,85 +282,7 @@ class ServerWorker(object):
                 info=b'handshake data',
             ).derive(shared_key)
 
-            # Inicializa o AESGCM
-            self.aesgcm = AESGCM(self.shared_key)
-            print("AESGCM initialized.")
-
-            nonce = os.urandom(12)
-            ciphertext = nonce + self.aesgcm.encrypt(nonce, "".encode(), None)
-
-            return ciphertext
-
-        if self.aesgcm is None:
-            return "".encode()
-
-        nonce = msg[:12]
-        ciphertext = msg[12:]
-        msg = self.aesgcm.decrypt(nonce, ciphertext, None)
-
-        txt = msg.decode()
-        print('%d : %r' % (self.id, txt))
-
-        if not txt:
-            return -1
-
-        new_msg = txt.upper().encode()
-
-        nonce = os.urandom(12)
-        ciphertext = nonce + self.aesgcm.encrypt(nonce, new_msg, None)
-
-        return ciphertext if len(ciphertext) > 0 else None
-
-    def askqueue(self, client_id):
-        messages = []
-        json_data = {}
-        with open('database.json', 'r') as file:
-            json_data = json.load(file)
-            for key, value in json_data.items():
-                parts = key.split(":")
-                sender = parts[1]
-                for v in value:
-                    if sender == client_id and not v[1]:
-                        messages.append(v[0])
-
-        # Sort messages based on time
-        messages.sort(key=lambda x: x[0])
-        # Extract message texts
-        return messages
-
-    def get_msg(self, num):
-        with open('database.json', 'r') as file:
-            json_data = json.load(file)
-            for key, value in json_data.items():
-                parts = key.split(":")
-                message_num = parts[0]
-                if message_num == num:
-                    return value[0][0]
-
-    def store_msg(self, sender, subject, message):
-        try:
-            json_data = {}
-            with open('database.json', 'r') as file:
-                json_data = json.load(file)
-
-            current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-            # Generate a new message number
-            new_message_num = str(len(json_data) + 1)
-
-            # Create the new key in the format "<NUM>:<SENDER>:<TIME>:<SUBJECT>"
-            new_key = f"{new_message_num}:{sender}:{current_time}:{subject}"
-
-            # Add the new message to the JSON data
-            json_data[new_key] = (message, False)
-
-            # Write the updated JSON data back to the file
-            with open('database.json', 'w') as file:
-                json.dump(json_data, file)
-
-            print("Message stored successfully.")
-        except:
-            print("Error storing message.")
+            print("> Shared key generated.")
 
 
 # MAIN FUNCTIONALITY
@@ -282,22 +290,45 @@ class ServerWorker(object):
 
 async def handle_echo(reader, writer):
     global conn_cnt
+
+    # increase connection count
     conn_cnt += 1
+    print("✓ New connection established:", conn_cnt)
+
+    # initialize server worker
     addr = writer.get_extra_info('peername')
     srvwrk = ServerWorker(conn_cnt, addr)
+
+    # read first message
     data = await reader.read(max_msg_size)
-    while True:
-        if not data:
-            continue
-        if data[:1] == b'\n':
-            break
-        data = srvwrk.process(data)
-        if data == -1:
-            break
-        writer.write(data)
-        await writer.drain()
-        data = await reader.read(max_msg_size)
-    print("[%d]" % srvwrk.id)
+
+    # read continuously
+    try:
+        while data and data != -1 and data[:1] != b'\n':
+            # decipher received data
+            if srvwrk.shared_key != None:
+                data = aes_gcm.decipher(data, srvwrk.shared_key)
+
+            # process data and get a response
+            res = srvwrk.process(data)
+
+            # send response
+            if res != None:
+                # cipher response
+                if srvwrk.shared_key != None:
+                    res = aes_gcm.cipher(res, srvwrk.shared_key)
+
+                writer.write(res)
+                await writer.drain()
+                print("> Sent response.")
+
+            # wait for next message
+            print("> Waiting for next message...")
+            data = await reader.read(max_msg_size)
+    except Exception as e:
+        print("ERROR:", e, file=sys.stderr)
+
+    print(f"✗ Connection closed: {srvwrk.id}")
     writer.close()
 
 
@@ -308,6 +339,7 @@ def main():
     loop = asyncio.new_event_loop()
     coro = asyncio.start_server(handle_echo, '127.0.0.1', conn_port)
     server = loop.run_until_complete(coro)
+
     # Serve requests until Ctrl+C is pressed
     print('Serving on {}'.format(server.sockets[0].getsockname()))
     print('  (type ^C to finish)\n')
@@ -315,11 +347,12 @@ def main():
         loop.run_forever()
     except KeyboardInterrupt:
         pass
+
     # Close the server
     server.close()
     loop.run_until_complete(server.wait_closed())
     loop.close()
-    print('\nFINISHED!')
+    print('\b\bClosing server...')
 
 
 main()
