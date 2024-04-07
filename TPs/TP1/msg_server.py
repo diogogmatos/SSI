@@ -12,6 +12,9 @@ import bson
 from datetime import datetime
 import aes_gcm
 import os
+import msg_serialization
+from typing import Dict
+import sys
 
 
 # CONSTANTS
@@ -25,10 +28,7 @@ g = 2
 ca_cert = x509.load_pem_x509_certificate(
     open("projCA/certs/MSG_SERVER.crt", "rb").read())
 
-
-# def load_cert(cert_name):
-#     with open(cert_name, "rb") as cert_file:
-#         return cert_file.read()
+serializer = msg_serialization.Serializer()
 
 
 # SERVER
@@ -49,21 +49,6 @@ def validate_rsa_signature(rsa_public_key, signature, data):
         return True
     except:
         return False
-
-
-def mkpair(x, y):
-    """ produz uma byte-string contendo o tuplo '(x,y)' ('x' e 'y' são byte-strings) """
-    len_x = len(x)
-    len_x_bytes = len_x.to_bytes(2, 'little')
-    return len_x_bytes + x + y
-
-
-def unpair(xy):
-    """ extrai componentes de um par codificado com 'mkpair' """
-    len_x = int.from_bytes(xy[:2], 'little')
-    x = xy[2:len_x+2]
-    y = xy[len_x+2:]
-    return x, y
 
 
 class ServerWorker(object):
@@ -99,23 +84,23 @@ class ServerWorker(object):
             # decipher file data
             data = aes_gcm.decipher(file.read(), self.database_key)
             # decod data as BSON
-            bson_data = bson.BSON(data).decode()
+            bson_data: Dict[str, tuple[bytes, bool]] = bson.BSON(data).decode()
             for key, value in bson_data.items():
                 msg_info = key.split("|")
-                sender = msg_info[1]
-                if sender == uid and not value[1]:
+                msg_receiver = msg_info[2]
+                if msg_receiver == uid and not value[1]:
                     messages.append(key.replace("|", ":"))
 
         # check if there are no messages
         if not messages:
             return "No unread messages found.".encode()
-        
+
         # sort messages based on time
         messages.sort(key=lambda x: x[0])
 
         return "\n".join(messages).encode()
 
-    def get_msg(self, num):
+    def get_msg(self, num, uid):
         r: bytes = b''
         bson_data = {}
 
@@ -124,48 +109,52 @@ class ServerWorker(object):
             # decipher file data
             data = aes_gcm.decipher(file.read(), self.database_key)
             # decode data as BSON
-            bson_data = bson.BSON(data).decode()
-            
+            bson_data: Dict[str, tuple[bytes, bool]] = bson.BSON(data).decode()
+
             # find requested message
             for key, value in bson_data.items():
                 msg_info = key.split("|")
-                msg_num = msg_info[0]                
-                if msg_num == num:
+                msg_num = msg_info[0]
+                msg_receiver = msg_info[2]
+                if msg_num == num and msg_receiver == uid:
                     if not value[1]:
                         value[1] = True
                         print(f"> Message {num} marked as read.")
-                    r = f"{msg_info[3]}\n\n{value[0]}".encode()
-        
+                    r = value[0]
+
         # update file with message marked as read
         with open("database.bson", "wb") as file:
-            file.write(aes_gcm.cipher(bson.BSON.encode(bson_data), self.database_key))
+            file.write(aes_gcm.cipher(
+                bson.BSON.encode(bson_data), self.database_key))
 
         return r
 
-    def store_msg(self, sender, subject, message):
+    def store_msg(self, sender, receiver, subject, message):
         bson_data = {}
 
         # create database file if it doesn't exist
         if not os.path.exists("database.bson"):
             with open('database.bson', 'xb') as file:
                 # store ciphered empty BSON data
-                file.write(aes_gcm.cipher(bson.BSON.encode({}), self.database_key))
-        
+                file.write(aes_gcm.cipher(
+                    bson.BSON.encode({}), self.database_key))
+
         # open existing database file
-        else:            
+        else:
             with open('database.bson', 'rb') as file:
                 # decipher file data
                 data = aes_gcm.decipher(file.read(), self.database_key)
                 # decode data as BSON
-                bson_data = bson.BSON(data).decode()
+                bson_data: Dict[str, tuple[bytes, bool]
+                                ] = bson.BSON(data).decode()
 
         current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
         # generate a new message number
         new_message_num = str(len(bson_data) + 1)
 
-        # create the new key in the format "<NUM>:<SENDER>:<TIME>:<SUBJECT>"
-        new_key = f"{new_message_num}|{sender}|{current_time}|{subject}"
+        # create the new key in the format "<NUM>|<SENDER>|<RECEIVER>|<TIME>|<SUBJECT>"
+        new_key = f"{new_message_num}|{sender}|{receiver}|{current_time}|{subject}"
 
         # add the new message to the BSON data
         bson_data[new_key] = message, False
@@ -173,27 +162,26 @@ class ServerWorker(object):
         # write the updated BSON data back to the file
         with open('database.bson', 'wb') as file:
             # store ciphered data
-            file.write(aes_gcm.cipher(bson.BSON.encode(bson_data), self.database_key))
+            file.write(aes_gcm.cipher(
+                bson.BSON.encode(bson_data), self.database_key))
 
         print(f"> New message to {sender} stored successfully.")
 
     def handle_commands(self, msg):
         try:
-            msg = msg.decode()
-            msg = msg.split("|")
+            msg = serializer.deserialize(msg)
         except:
             return None
 
         match msg[0]:
             case "askqueue":
-                print(msg)
                 return self.askqueue(msg[1])
 
             case "getmsg":
-                return self.get_msg(msg[1])
+                return self.get_msg(msg[1], msg[2])
 
             case "send":
-                self.store_msg(msg[1], msg[2], msg[3])
+                self.store_msg(msg[1], msg[2], msg[3], msg[4])
                 return "Message sent successfully.".encode()
 
             case _:
@@ -219,7 +207,7 @@ class ServerWorker(object):
             print("> Received public DH key.")
             client_dh_pub = serialization.load_pem_public_key(msg)
             # Cria o par de chaves públicas
-            dh_pair = mkpair(
+            dh_pair = msg_serialization.mkpair(
                 self.dhprivate_key.public_key().public_bytes(
                     encoding=serialization.Encoding.PEM,
                     format=serialization.PublicFormat.SubjectPublicKeyInfo
@@ -239,9 +227,9 @@ class ServerWorker(object):
                 hashes.SHA256()
             )
 
-            pair1 = mkpair(signature, self.cert.public_bytes(
+            pair1 = msg_serialization.mkpair(signature, self.cert.public_bytes(
                 encoding=serialization.Encoding.PEM))
-            pair2 = mkpair(
+            pair2 = msg_serialization.mkpair(
                 self.dhprivate_key.public_key().public_bytes(
                     encoding=serialization.Encoding.PEM,
                     format=serialization.PublicFormat.SubjectPublicKeyInfo),
@@ -251,10 +239,12 @@ class ServerWorker(object):
             return pair2
 
         # process public key, cert and signature
-        if unpair(msg)[0].splitlines()[0] == b'-----BEGIN PUBLIC KEY-----':
+        if msg_serialization.unpair(msg)[0].splitlines()[0] == b'-----BEGIN PUBLIC KEY-----':
             print("> Received public key, cert and signature.")
-            server_dh_pub = serialization.load_pem_public_key(unpair(msg)[0])
-            signature, cert_name = unpair(unpair(msg)[1])
+            server_dh_pub = serialization.load_pem_public_key(
+                msg_serialization.unpair(msg)[0])
+            signature, cert_name = msg_serialization.unpair(
+                msg_serialization.unpair(msg)[1])
             cert_name = cert_name.decode()
 
             # Verifica o certificado
@@ -268,7 +258,7 @@ class ServerWorker(object):
             server_rsa_public_key = cert.public_key()
 
             # Verifica a assinatura
-            dh_pair = mkpair(
+            dh_pair = msg_serialization.mkpair(
                 server_dh_pub.public_bytes(
                     encoding=serialization.Encoding.PEM,
                     format=serialization.PublicFormat.SubjectPublicKeyInfo
@@ -313,30 +303,30 @@ async def handle_echo(reader, writer):
     data = await reader.read(max_msg_size)
 
     # read continuously
-    # try:
-    while data and data != -1 and data[:1] != b'\n':
-        # decipher received data
-        if srvwrk.shared_key != None:
-            data = aes_gcm.decipher(data, srvwrk.shared_key)
-
-        # process data and get a response
-        res = srvwrk.process(data)
-
-        # send response
-        if res != None:
-            # cipher response
+    try:
+        while data and data != -1 and data[:1] != b'\n':
+            # decipher received data
             if srvwrk.shared_key != None:
-                res = aes_gcm.cipher(res, srvwrk.shared_key)
+                data = aes_gcm.decipher(data, srvwrk.shared_key)
 
-            writer.write(res)
-            await writer.drain()
-            print("> Sent response.")
+            # process data and get a response
+            res = srvwrk.process(data)
 
-        # wait for next message
-        print("> Waiting for next message...")
-        data = await reader.read(max_msg_size)
-    # except Exception as e:
-    #     print("ERROR:", e)
+            # send response
+            if res != None:
+                # cipher response
+                if srvwrk.shared_key != None:
+                    res = aes_gcm.cipher(res, srvwrk.shared_key)
+
+                writer.write(res)
+                await writer.drain()
+                print("> Sent response.")
+
+            # wait for next message
+            print("> Waiting for next message...")
+            data = await reader.read(max_msg_size)
+    except Exception as e:
+        print("ERROR:", e, file=sys.stderr)
 
     print(f"✗ Connection closed: {srvwrk.id}")
     writer.close()

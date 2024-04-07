@@ -11,6 +11,7 @@ from cryptography.hazmat.primitives.asymmetric import padding
 import validate_cert
 import sys
 import aes_gcm
+import msg_serialization
 
 # CONSTANTS
 
@@ -22,13 +23,15 @@ ca_cert = x509.load_pem_x509_certificate(
     open("projCA/certs/MSG_CLI1.crt", "rb").read())
 end = 0
 
+serializer = msg_serialization.Serializer()
+
 
 # CLIENT
 
 
-def validate_rsa_signature(rsa_public_key, signature, data):
+def validate_signature(signature, cert, data):
     try:
-        rsa_public_key.verify(
+        cert.public_key().verify(
             signature,
             data,
             padding.PSS(
@@ -42,40 +45,25 @@ def validate_rsa_signature(rsa_public_key, signature, data):
         return False
 
 
-def mkpair(x, y):
-    """ produz uma byte-string contendo o tuplo '(x,y)' ('x' e 'y' são byte-strings) """
-    len_x = len(x)
-    len_x_bytes = len_x.to_bytes(2, 'little')
-    return len_x_bytes + x + y
-
-
-def unpair(xy):
-    """ extrai componentes de um par codificado com 'mkpair' """
-    len_x = int.from_bytes(xy[:2], 'little')
-    x = xy[2:len_x+2]
-    y = xy[len_x+2:]
-    return x, y
-
-
 class Client:
     """ Classe que implementa a funcionalidade de um CLIENTE. """
 
-    def __init__(self, user_data="projCA/certs/MSG_CLI1", sckt=None):
+    def __init__(self, userdata="projCA/certs/MSG_CLI1", sckt=None):
         """ Construtor da classe. """
         self.sckt = sckt
         self.msg_cnt = 0
         self.dhprivate_key = dh.DHParameterNumbers(
             p, g).parameters().generate_private_key()
         self.rsaprivate_key = None
+        self.cert = None
         self.shared_key = None
-        self.user_data_file = f"{user_data}.p12"
+        self.user_data_file = f"{userdata}.p12"
+        #
         with open(self.user_data_file, "rb") as p12_file:
-            (self.rsaprivate_key, self.cert, _) = serialization.pkcs12.load_key_and_certificates(
+            self.rsaprivate_key, self.cert, _ = serialization.pkcs12.load_key_and_certificates(
                 p12_file.read(),
                 password=None,
             )
-        # pkcs12 load_key_and_certificates , ficheiro e a passe None
-        # passe server 1234
 
     def dh_key(self):
         self.msg_cnt += 1
@@ -91,8 +79,9 @@ class Client:
         self.msg_cnt += 1
 
         server_dh_pub = serialization.load_pem_public_key(
-            unpair(server_info)[0])
-        signature, cert_name = unpair(unpair(server_info)[1])
+            msg_serialization.unpair(server_info)[0])
+        signature, cert_name = msg_serialization.unpair(
+            msg_serialization.unpair(server_info)[1])
         cert_name = cert_name.decode()
 
         # Verifica o certificado
@@ -104,11 +93,9 @@ class Client:
             return None
         print("✓ Certificate is valid")
 
-        server_rsa_public_key = cert.public_key()
-
         # Verifica a assinatura
 
-        dh_pair = mkpair(
+        dh_pair = msg_serialization.mkpair(
             server_dh_pub.public_bytes(
                 encoding=serialization.Encoding.PEM,
                 format=serialization.PublicFormat.SubjectPublicKeyInfo
@@ -118,7 +105,7 @@ class Client:
                 format=serialization.PublicFormat.SubjectPublicKeyInfo)
         )
 
-        if not validate_rsa_signature(server_rsa_public_key, signature, dh_pair):
+        if not validate_signature(signature, cert, dh_pair):
             print("✗ Signature is not valid")
             return None
         print("✓ Signature is valid")
@@ -140,7 +127,7 @@ class Client:
         # cert + assinatura com mensagem
 
         signature = self.rsaprivate_key.sign(
-            mkpair(
+            msg_serialization.mkpair(
                 self.dhprivate_key.public_key().public_bytes(
                     encoding=serialization.Encoding.PEM,
                     format=serialization.PublicFormat.SubjectPublicKeyInfo
@@ -157,9 +144,9 @@ class Client:
             hashes.SHA256()
         )
 
-        sig_cert = mkpair(signature, self.cert.public_bytes(
+        sig_cert = msg_serialization.mkpair(signature, self.cert.public_bytes(
             encoding=serialization.Encoding.PEM))
-        pubkey_sig_cert = mkpair(
+        pubkey_sig_cert = msg_serialization.mkpair(
             self.dhprivate_key.public_key().public_bytes(
                 encoding=serialization.Encoding.PEM,
                 format=serialization.PublicFormat.SubjectPublicKeyInfo),
@@ -172,28 +159,32 @@ class Client:
 # MAIN FUNCTIONALITY
 
 
-def wrap_message(client: Client, msg: bytes):
-    return aes_gcm.cipher(msg, client.shared_key)
-
-
 async def tcp_echo_client():
     # parse arguments
     parser = argparse.ArgumentParser()
     parser.add_argument('-user', dest='userdata', default='projCA/certs/MSG_CLI1',
                         help='specify user data file path')
     parser.add_argument('command', choices=[
-                        'send', 'askqueue', 'getmsg'], help='command to execute')
+                        'send', 'askqueue', 'getmsg', 'help'], help='command to execute')
     parser.add_argument('uid_num', nargs='?', help='user id || message number')
     parser.add_argument('subject', nargs='?', help='subject of the message')
-    args = parser.parse_args()
-    user_data = args.userdata
+
+    try:
+        args = parser.parse_args()
+    except:
+        sys.stderr.write("MSG RELAY SERVICE: command error!\n")
+        return
+
+    if args.command == "help":
+        parser.print_help()
+        return
 
     # open connection
     reader, writer = await asyncio.open_connection('127.0.0.1', conn_port)
 
     # initialize client
     addr = writer.get_extra_info('peername')
-    client = Client(user_data, addr)
+    client = Client(args.userdata, addr)
 
     # send public DH key to server
     writer.write(client.dh_key())
@@ -210,54 +201,84 @@ async def tcp_echo_client():
     writer.write(client_info)
     print("> Sent public key, cert and signature.")
 
-    # try:
-    match args.command:
-        case 'send':
-            # get message to send from user
-            msg_send = input("> Input message to send: ")
+    try:
+        match args.command:
+            case 'send':
+                # get message to send from user
+                msg_send = input("> Input message to send: ")
 
-            # check message length
-            if sys.getsizeof(msg_send) > 1000:
-                raise ValueError(
-                    "The message is too long. Maximum size is 1000 bytes.")
+                # check message length
+                if sys.getsizeof(msg_send) > 1000:
+                    raise ValueError(
+                        "The message is too long. Maximum size is 1000 bytes.")
 
-            # send message to server
-            writer.write(wrap_message(
-                client, f"send|{args.uid_num}|{args.subject}|{msg_send}".encode()))
+                # send message to server
+                writer.write(aes_gcm.cipher(serializer.send.serialize(
+                    args.userdata, args.uid_num, args.subject, msg_send, client), client.shared_key))
 
-            # receive response from server
-            output = await reader.read(max_msg_size)
+                # receive response from server
+                output = await reader.read(max_msg_size)
 
-            # print response
-            print(aes_gcm.decipher(output, client.shared_key).decode())
+                # print response
+                print(aes_gcm.decipher(output, client.shared_key).decode())
 
-        case 'askqueue':
-            # send message to server
-            writer.write(wrap_message(
-                client, f"askqueue|{args.userdata}".encode()))
-            # receive response from server
-            output = await reader.read(max_msg_size)
-            # print response
-            print(
-                f"> Unread messages:\n\n{aes_gcm.decipher(output, client.shared_key).decode()}\n")
+            case 'askqueue':
+                # send message to server
+                writer.write(aes_gcm.cipher(serializer.askqueue.serialize(
+                    args.userdata), client.shared_key))
 
-        case 'getmsg':
-            # send message to server
-            writer.write(wrap_message(
-                client, f"getmsg|{args.uid_num}".encode()))
-            # receive response from server
-            output = await reader.read(max_msg_size)
-            # print response
-            print(
-                f"> Here's message {args.uid_num}:\n\n{aes_gcm.decipher(output, client.shared_key).decode()}\n")
+                # receive response from server
+                output = await reader.read(max_msg_size)
 
-        case "-user":
-            client.user_data_file = args.userdata
+                # print response
+                print(
+                    f"> Unread messages:\n\n{aes_gcm.decipher(output, client.shared_key).decode()}\n")
 
-        case _:
-            print("Invalid command. Use 'help' to see the available commands.")
-    # except Exception as e:
-    #     print("ERROR:", e)
+            case 'getmsg':
+                # send message to server
+                writer.write(aes_gcm.cipher(
+                    serializer.getmsg.serialize(args.uid_num, args.userdata), client.shared_key))
+
+                # receive response from server
+                output = await reader.read(max_msg_size)
+                deciphered_output = aes_gcm.decipher(output, client.shared_key)
+
+                # get data for message verification and message
+                signature, certificate, message = serializer.getmsg.unbundle_message(
+                    deciphered_output)
+
+                err = False
+                response = ""
+
+                # perform validations
+
+                # check if message was found
+                if message == b"":
+                    err = True
+                    response = "MSG RELAY SERVICE: unknown message!\n"
+
+                # validate certificate and signature
+                elif not validate_cert.valida_cert(x509.load_pem_x509_certificate(certificate), "") or not validate_signature(signature, x509.load_pem_x509_certificate(certificate), message):
+                    err = True
+                    response = "MSG RELAY SERVICE: verification error!\n"
+
+                else:
+                    print("✓ Message verified")
+                    response = f"> Here's message {args.uid_num}:\n\n{message.decode()}\n"
+
+                # print response
+                if err:
+                    sys.stderr.write(response)
+                else:
+                    print(response)
+
+            case "-user":
+                client.user_data_file = args.userdata
+
+            case _:
+                sys.stderr.write("MSG RELAY SERVICE: command error!\n")
+    except Exception as e:
+        print("ERROR:", e, file=sys.stderr)
 
     print('Closing connection...')
     writer.close()
