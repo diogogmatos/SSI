@@ -15,8 +15,8 @@ int main(int argc, char *argv[]) {
 
   int read_bytes = 1;
   int res = mkfifo("tmp/main_fifo", 0666);
-  char buffer2[4096];
-  memset(buffer2, 0, 4096);
+  char buffer2[8192];
+  memset(buffer2, 0, 8192);
   int res2 = 0;
   if (res == -1) {
     unlink("tmp/main_fifo");
@@ -31,8 +31,11 @@ int main(int argc, char *argv[]) {
     while (true) {
       file_d input = open("tmp/main_fifo", O_RDONLY);
       open("tmp/main_fifo", O_WRONLY);
-      read_bytes = read(input, buffer2, 4096);
+      read_bytes = read(input, buffer2, 8192);
       write(1, buffer2, read_bytes);
+
+      // Add to the queue 
+      // See the type of command
     }
   }
   return 0;

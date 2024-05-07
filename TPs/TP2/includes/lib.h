@@ -10,7 +10,7 @@
 typedef struct message {
   char *sender;
   char *receiver;
-  char *subject;
+  char *type;
   char *message;
   time_t timestamp;
 } Message;

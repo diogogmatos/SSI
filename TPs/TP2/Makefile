@@ -1,31 +1,26 @@
-# Define variables for directories
 SRCDIR := src
 OBJDIR := obj
 BINDIR := bin
 
 CC := gcc
-EXEC := $(BINDIR)/server $(BINDIR)/user
 CFLAGS := -Wall -g -lssl -lcrypto
 INC := -I includes/
-SRC1 := $(shell find src/ -name '*.c' -not -name 'server.c')
-SRC2 := $(shell find src/ -name '*.c' -not -name 'user.c')	
+
+SCRIPTS := concordia-ativar concordia-responder concordia-grupo-destinario-remover concordia-enviar concordia-desativar concordia-grupo-criar concordia-listar concordia-remover concordia-grupo-listar concordia-grupo-destinario-adicionar concordia-grupo-remover
+
+SCRIPT_OBJS := $(addprefix $(OBJDIR)/, $(addsuffix .o, $(SCRIPTS)))
+
+EXEC := $(addprefix $(BINDIR)/, $(SCRIPTS))
 
 .PHONY: all
 all: $(EXEC)
 
-build:
+$(BINDIR)/%: $(OBJDIR)/%.o
+	$(CC) $(CFLAGS) $(INC) -o $@ $<
 
-$(BINDIR)/server: $(SRC2)
-	$(CC) $(CFLAGS) $(INC) -o $@ $^
-
-$(BINDIR)/user: $(SRC1)
-	$(CC) $(CFLAGS) $(INC) -o $@ $^
+$(OBJDIR)/%.o: $(SRCDIR)/%.c
+	$(CC) $(CFLAGS) $(INC) -o $@ -c $<
 
 .PHONY: clean
 clean:
 	rm -f $(OBJDIR)/* $(BINDIR)/*
-
-.PHONY: format
-format:
-	clang-format -i -style=file $(shell find src/ -name '*.c' -o -name '*.h') $(shell find includes/ -name '*.h')
-
