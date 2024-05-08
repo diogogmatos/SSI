@@ -1,0 +1,6 @@
+[Unit]
+Description=This is my daemon
+[Service]
+ExecStart=/home/juilojpinto/Personal/College/SSI/2324-G10/Guioes/S10/mydaemon
+[Install]
+WantedBy=multi-user.target
