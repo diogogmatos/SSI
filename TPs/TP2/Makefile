@@ -27,4 +27,5 @@ $(OBJDIR)/%.o: $(SRCDIR)/%.c
 
 .PHONY: clean
 clean:
-	@rm -f $(OBJDIR)/* $(BINDIR)/*
+	@echo "Cleaning up..."
+	@rm -f $(OBJDIR)/* $(BINDIR)/* $(TMPDIR)/*
