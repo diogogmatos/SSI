@@ -1,6 +1,6 @@
 #include "lib.h"
 #include <stdlib.h>
 
-Message *dequeueMessage() { return; }
+MESSAGE *dequeueMESSAGE() { return; }
 
-void enqueueMessage(Message *message) { return; }
+void enqueueMESSAGE(MESSAGE *message) { return; }

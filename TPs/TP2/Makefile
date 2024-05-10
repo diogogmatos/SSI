@@ -23,4 +23,4 @@ $(OBJDIR)/%.o: $(SRCDIR)/%.c
 
 .PHONY: clean
 clean:
-	rm -f $(OBJDIR)/* $(BINDIR)/*
+	@rm -f $(OBJDIR)/* $(BINDIR)/*

@@ -7,23 +7,37 @@
 #include <sys/types.h>
 #include <time.h>
 
-typedef struct message {
+typedef enum _message_type
+{
+  user_activate,
+  user_deactivate,
+  user_message,
+} MESSAGE_TYPE;
+
+const char *message_type_str[] = {
+    "user_activate",
+    "user_deactivate",
+    "user_message",
+};
+
+typedef struct _message
+{
   char *sender;
   char *receiver;
-  char *type;
+  MESSAGE_TYPE type;
   char *message;
   time_t timestamp;
-} Message;
+} MESSAGE;
 
 typedef int file_d;
 
 /**
  * @brief Function to serialize a message
  *
- * @param message Message to be serialized
+ * @param message MESSAGE to be serialized
  * @param buffer Buffer to store the serialized message
  * @param buffer_size Buffer size
  */
-void serializeMessage(Message *message, char *buffer, size_t buffer_size);
+void serializeMESSAGE(MESSAGE *message, char *buffer, size_t buffer_size);
 
 #endif

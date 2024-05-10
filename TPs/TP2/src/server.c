@@ -1,4 +1,4 @@
-#include "lib.h"
+#include "../includes/lib.h"
 #include <dirent.h>
 #include <fcntl.h>
 #include <stdbool.h>
@@ -11,32 +11,116 @@
 #include <time.h>
 #include <unistd.h>
 
-int main(int argc, char *argv[]) {
+void handle_fifo(int fd, bool is_main_fifo)
+{
+  MESSAGE m;
+  int bytes_read;
 
-  int read_bytes = 1;
-  int res = mkfifo("tmp/main_fifo", 0666);
-  char buffer2[8192];
-  memset(buffer2, 0, 8192);
-  int res2 = 0;
-  if (res == -1) {
-    unlink("tmp/main_fifo");
-    res2 = mkfifo("tmp/main_fifo", 0666);
-  }
-  if (res2 == -1) {
-    write(1, "Error creating the main fifo",
-          strlen("Error creating the main fifo\n"));
+  while ((bytes_read = read(fd, &m, sizeof(MESSAGE))) > 0)
+  {
+    bool valid = true;
 
-  } else {
-    write(1, "Main fifo created\n", strlen("Main fifo created\n"));
-    while (true) {
-      file_d input = open("tmp/main_fifo", O_RDONLY);
-      open("tmp/main_fifo", O_WRONLY);
-      read_bytes = read(input, buffer2, 8192);
-      write(1, buffer2, read_bytes);
+    // verify that user exists
+    if (is_main_fifo)
+    {
+      char *path = strcat("concordia/", m.sender);
+      int r = open(path, O_RDONLY);
+      if (r == -1)
+      {
+        perror("[ERROR] User doesn't exist.");
+        valid = false;
+      }
+    }
 
-      // Add to the queue 
-      // See the type of command
+    if (valid)
+    {
+      switch (m.type)
+      {
+      case user_activate:
+        /* code */
+        break;
+
+      case user_deactivate:
+        /* code */
+        break;
+
+      case user_message:
+        /* code */
+        break;
+
+      default:
+        break;
+      }
     }
   }
+}
+
+int main(int argc, char *argv[])
+{
+  // create main fifo
+  int r1 = mkfifo("tmp/main_fifo", 0666);
+  if (r1 == -1)
+  {
+    perror("[ERROR] Couldn't create main FIFO");
+    return -1;
+  }
+
+  printf("> Main FIFO created.\n");
+  fflush(stdout);
+
+  // create activate/deactivate (AD) fifo
+  int r2 = mkfifo("tmp/ad_fifo", 0666);
+  if (r2 == -1)
+  {
+    perror("[ERROR] Couldn't create AD FIFO");
+    return -1;
+  }
+
+  printf("> AD FIFO created.\n");
+  fflush(stdout);
+
+  // open main fifo
+  int main_fd = open("tmp/main_fifo", O_RDONLY);
+  if (main_fd == -1)
+  {
+    perror("[ERROR] Couldn't open main FIFO");
+    return -1;
+  }
+
+  printf("> Main FIFO opened.\n");
+  fflush(stdout);
+
+  // open AD fifo
+  int ad_fd = open("tmp/ad_fifo", O_RDONLY);
+  if (ad_fd == -1)
+  {
+    perror("[ERROR] Couldn't open AD FIFO");
+    return -1;
+  }
+
+  printf("> AD FIFO opened.\n");
+  fflush(stdout);
+
+  // allows server to keep fifo's open
+  int keep_open = open("tmp/main_fifo", O_WRONLY);
+  keep_open = open("tmp/ad_fifo", O_WRONLY);
+
+  // handle both fifos concurrently
+  pid_t pid = fork();
+  if (pid == 0) // child process
+  {
+    handle_fifo(ad_fd, false);
+  }
+  else // parent process
+  {
+    handle_fifo(main_fd, true);
+  }
+
+  // close fifos
+  close(main_fd);
+  close(ad_fd);
+  unlink("tmp/main_fifo");
+  unlink("tmp/ad_fifo");
+
   return 0;
 }
