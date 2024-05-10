@@ -1,6 +1,7 @@
 SRCDIR := src
 OBJDIR := obj
 BINDIR := bin
+TMPDIR := tmp
 
 CC := gcc
 CFLAGS := -Wall -g -lssl -lcrypto -lacl
@@ -8,9 +9,12 @@ INC := -I includes/
 
 SCRIPTS := concordia-ativar concordia-responder concordia-grupo-destinario-remover concordia-enviar concordia-desativar concordia-grupo-criar concordia-listar concordia-remover concordia-grupo-listar concordia-grupo-destinario-adicionar concordia-grupo-remover server
 
-SCRIPT_OBJS := $(addprefix $(OBJDIR)/, $(addsuffix .o, $(SCRIPTS)))
+SCRIPT_OBJS := $(addprefix $(OBJDIR)/, $(addsuffix.o, $(SCRIPTS)))
 
 EXEC := $(addprefix $(BINDIR)/, $(SCRIPTS))
+
+# Ensure directories exist
+$(shell mkdir -p $(OBJDIR) $(BINDIR) $(TMPDIR))
 
 .PHONY: all
 all: $(EXEC)
