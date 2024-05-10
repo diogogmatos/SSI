@@ -1,39 +1,28 @@
-#include "lib.h"
-#include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 
-
-#define BLOCK_SIZE 16
-
 int main(int argc, char *argv[]) {
-  if (argc < 3) {
-    char buffer[100];
-    snprintf(buffer, 100, "Usage: %s [-a]\n",
-             argv[0]);
-    write(1, buffer, strlen(buffer));
-    return 1;
-  }
+    if (argc != 3) {
+        printf("Usage: %s <group> <folder_path>\n", argv[0]);
+        return 1;
+    }
 
-  int fd = open("tmp/main_fifo", O_WRONLY);
+    char *group = argv[1];
+    char *folder_path = argv[2];
 
-  if (fd == -1) {
-    perror("Error opening FIFO for writing");
-    return 1;
-  }
+    char command[150];
 
-  char *username = getlogin();
+    sprintf(command, "setfacl -x g:%s %s", group, folder_path);
 
-  if (username == NULL) {
-    perror("Error getting username");
-    return 1;
-  }
+    int status = system(command);
+    
+    if (status == 0) {
+        printf("Permissions set successfully for %s. Access restricted for others.\n", folder_path);
+    } else {
+        printf("Failed to set permissions for %s.\n", folder_path);
+    }
 
-
-
-
-  close(fd);
-  return 0;
+    return 0;
 }

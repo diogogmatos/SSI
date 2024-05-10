@@ -5,9 +5,6 @@
 #include <string.h>
 #include <unistd.h>
 
-
-#define BLOCK_SIZE 16
-
 int main(int argc, char *argv[]) {
   if (argc < 3) {
     char buffer[100];

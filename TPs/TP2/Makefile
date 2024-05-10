@@ -3,7 +3,7 @@ OBJDIR := obj
 BINDIR := bin
 
 CC := gcc
-CFLAGS := -Wall -g -lssl -lcrypto
+CFLAGS := -Wall -g -lssl -lcrypto -lacl
 INC := -I includes/
 
 SCRIPTS := concordia-ativar concordia-responder concordia-grupo-destinario-remover concordia-enviar concordia-desativar concordia-grupo-criar concordia-listar concordia-remover concordia-grupo-listar concordia-grupo-destinario-adicionar concordia-grupo-remover server
