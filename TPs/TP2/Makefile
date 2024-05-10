@@ -2,6 +2,7 @@ SRCDIR := src
 OBJDIR := obj
 BINDIR := bin
 TMPDIR := tmp
+TMPDIRUSERS := $(TMPDIR)/concordia
 
 CC := gcc
 CFLAGS := -Wall -g -lssl -lcrypto -lacl
@@ -14,7 +15,7 @@ SCRIPT_OBJS := $(addprefix $(OBJDIR)/, $(addsuffix.o, $(SCRIPTS)))
 EXEC := $(addprefix $(BINDIR)/, $(SCRIPTS))
 
 # Ensure directories exist
-$(shell mkdir -p $(OBJDIR) $(BINDIR) $(TMPDIR))
+$(shell mkdir -p $(OBJDIR) $(BINDIR) $(TMPDIR) $(TMPDIRUSERS))
 
 .PHONY: all
 all: $(EXEC)
@@ -27,5 +28,4 @@ $(OBJDIR)/%.o: $(SRCDIR)/%.c
 
 .PHONY: clean
 clean:
-	@echo "Cleaning up..."
-	@rm -f $(OBJDIR)/* $(BINDIR)/* $(TMPDIR)/*
+	@rm -f $(OBJDIR)/* $(BINDIR)/* $(TMPDIR)/* $(TMPDIRUSERS)/*

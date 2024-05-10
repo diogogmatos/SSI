@@ -7,6 +7,8 @@
 #include <sys/types.h>
 #include <time.h>
 
+#define STRING_SIZE 100
+
 typedef enum _message_type
 {
   user_activate,
@@ -22,10 +24,10 @@ const char *message_type_str[] = {
 
 typedef struct _message
 {
-  char *sender;
-  char *receiver;
+  char sender[STRING_SIZE];
+  char receiver[STRING_SIZE];
   MESSAGE_TYPE type;
-  char *message;
+  char message[STRING_SIZE];
   time_t timestamp;
 } MESSAGE;
 

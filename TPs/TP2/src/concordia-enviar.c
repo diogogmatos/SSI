@@ -19,20 +19,13 @@ int main(int argc, char *argv[])
   }
 
   MESSAGE message;
-  message.receiver = argv[0];
-  message.message = argv[1];
+  snprintf(message.receiver, STRING_SIZE, "%s", argv[0]);
+  snprintf(message.sender, STRING_SIZE, "%s", argv[1]);
 
   int total_length = 0;
   for (int i = 2; i < argc; i++)
   {
     total_length += strlen(argv[i]) + 1;
-  }
-
-  message.message = malloc(total_length);
-  if (message.message == NULL)
-  {
-    perror("Memory allocation failed");
-    return 1;
   }
 
   strcpy(message.message, "");
@@ -75,7 +68,7 @@ int main(int argc, char *argv[])
   }
   else
   {
-    message.sender = username;
+    snprintf(message.sender, STRING_SIZE, "%s", username);
   }
 
   printf("MESSAGE: %s \nSize: %d\n", message.message, total_length);
