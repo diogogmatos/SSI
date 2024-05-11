@@ -3,6 +3,7 @@ OBJDIR := obj
 BINDIR := bin
 TMPDIR := tmp
 TMPDIRUSERS := $(TMPDIR)/concordia
+USERDIR := concordia
 
 CC := gcc
 CFLAGS := -Wall -g -lssl -lcrypto -lacl
@@ -28,4 +29,19 @@ $(OBJDIR)/%.o: $(SRCDIR)/%.c
 
 .PHONY: clean
 clean:
-	@rm -f $(OBJDIR)/* $(BINDIR)/* $(TMPDIR)/* $(TMPDIRUSERS)/*
+	@rm -rf $(OBJDIR)/* $(BINDIR)/* $(TMPDIR)/*
+
+clean-users:
+	@rm -rf $(USERDIR)/*
+
+rebuild:
+	@make clean
+	@make all
+
+.PHONY: run
+run-server:
+	@./$(BINDIR)/server
+
+.PHONY: run
+run-ativar:
+	@./$(BINDIR)/concordia-ativar

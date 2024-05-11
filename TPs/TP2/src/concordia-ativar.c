@@ -35,13 +35,12 @@ int main(int argc, char *argv[])
   }
 
   // create message to send
-  MESSAGE m = {
-      .sender = username,
-      .receiver = "server",
-      .type = user_activate,
-      .message = "",
-      .timestamp = time(NULL),
-  };
+  MESSAGE m;
+  strncpy(m.sender, username, STRING_SIZE);
+  strncpy(m.receiver, "server", STRING_SIZE);
+  m.type = user_activate;
+  strncpy(m.message, "", STRING_SIZE);
+  m.timestamp = time(NULL);
 
   // send message
   r = write(fd, &m, sizeof(MESSAGE));
@@ -50,6 +49,8 @@ int main(int argc, char *argv[])
     perror("[ERROR] Couldn't send message");
     return -1;
   }
+
+  close(fd);
 
   // open response fifo for reading
   fd = open(path, O_RDONLY);
@@ -71,13 +72,15 @@ int main(int argc, char *argv[])
   // check if user creation was successful
   if (strcmp(response.message, "failed") == 0)
   {
-    perror("[ERROR] User creation failed");
+    printf("[ERROR] User creation failed\n");
+    fflush(stdout);
     return -1;
   }
 
   // create sent directory
-  char *dir_path;
-  sprintf(dir_path, "concordia/%s/sent", username);
+  char dir_path[100];
+  snprintf(dir_path, 100, "concordia/%s/sent", username);
+
   r = mkdir(dir_path, 0700);
   if (r == -1)
   {
@@ -93,6 +96,9 @@ int main(int argc, char *argv[])
     perror("[ERROR] Couldn't create received directory");
     return -1;
   }
+
+  printf("User '%s' activated.\n", username);
+  fflush(stdout);
 
   close(fd);
   return 0;

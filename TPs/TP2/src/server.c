@@ -37,9 +37,6 @@ void handle_fifo(int fd, bool is_main_fifo)
 
   while ((bytes_read = read(fd, &m, sizeof(MESSAGE))) > 0)
   {
-    printf("%s", m.type);
-    fflush(stdout);
-
     bool valid = true;
 
     // get user's dir path
@@ -63,37 +60,33 @@ void handle_fifo(int fd, bool is_main_fifo)
       {
       case user_activate:
       {
-        printf("entrou no user_activate\n");
-        fflush(stdout);
-
         // open response fifo
         char response_path[100];
         snprintf(response_path, 100, "tmp/concordia/%s", m.sender);
     
-        int r = open(response_path, O_WRONLY);
-        if (r == -1)
+        int response_fd = open(response_path, O_WRONLY);
+        if (response_fd == -1)
         {
           perror("[ERROR] Couldn't open response FIFO");
           break;
         }
 
         // create user's directory
-        r = mkdir(path, 0700);
+        int r = mkdir(path, 0700);
         if (r == -1)
         {
-          perror("[ERROR] Couldn't create user's directory.");
+          perror("[ERROR] Couldn't create user's directory");
 
           // create response message
-          MESSAGE response = {
-              .sender = "server",
-              .receiver = m.sender,
-              .type = user_activate,
-              .message = "failed",
-              .timestamp = time(NULL),
-          };
+          MESSAGE response;
+          strncpy(response.sender, "server", STRING_SIZE);
+          strncpy(response.receiver, m.sender, STRING_SIZE);
+          response.type = user_activate;
+          strncpy(response.message, "failed", STRING_SIZE);
+          response.timestamp = time(NULL);
 
           // send response
-          r = write(fd, &response, sizeof(MESSAGE));
+          r = write(response_fd, &response, sizeof(MESSAGE));
           break;
         }
 
@@ -101,16 +94,22 @@ void handle_fifo(int fd, bool is_main_fifo)
         set_permissions(m.sender, "rwx", path);
 
         // create response message
-        MESSAGE response = {
-            .sender = "server",
-            .receiver = m.sender,
-            .type = user_activate,
-            .message = "succeeded",
-            .timestamp = time(NULL),
-        };
+        MESSAGE response;
+        strncpy(response.sender, "server", STRING_SIZE);
+        strncpy(response.receiver, m.sender, STRING_SIZE);
+        response.type = user_activate;
+        strncpy(response.message, "success", STRING_SIZE);
+        response.timestamp = time(NULL);
 
         // send response
-        r = write(fd, &response, sizeof(MESSAGE));
+        r = write(response_fd, &response, sizeof(MESSAGE));
+
+        // close response fifo
+        close(response_fd);
+
+        printf("> User '%s' activated.\n", m.sender);
+        fflush(stdout);
+
         break;
       }
 
