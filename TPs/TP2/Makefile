@@ -45,3 +45,7 @@ run-server:
 .PHONY: run
 run-ativar:
 	@./$(BINDIR)/concordia-ativar
+
+.PHONY: run
+run-desativar:
+	@./$(BINDIR)/concordia-desativar

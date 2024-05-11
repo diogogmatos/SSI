@@ -14,8 +14,8 @@
 int set_permissions(char *username, char *permissions, char *dir_path)
 {
   // set command
-  char *execute;
-  sprintf(execute, "setfacl -m u:%s:%s %s", username, permissions, dir_path);
+  char execute[100];
+  snprintf(execute, 100, "setfacl -m u:%s:%s %s", username, permissions, dir_path);
 
   // execute command
   int status = system(execute);
@@ -23,8 +23,8 @@ int set_permissions(char *username, char *permissions, char *dir_path)
     return 0;
   else
   {
-    char *msg;
-    sprintf(msg, "[ERROR] Failed to set permissions for %s", username);
+    char msg[100];
+    snprintf(msg, 100, "[ERROR] Failed to set permissions for %s", username);
     perror(msg);
     return -1;
   }
@@ -63,7 +63,7 @@ void handle_fifo(int fd, bool is_main_fifo)
         // open response fifo
         char response_path[100];
         snprintf(response_path, 100, "tmp/concordia/%s", m.sender);
-    
+
         int response_fd = open(response_path, O_WRONLY);
         if (response_fd == -1)
         {
@@ -87,6 +87,10 @@ void handle_fifo(int fd, bool is_main_fifo)
 
           // send response
           r = write(response_fd, &response, sizeof(MESSAGE));
+
+          // close response fifo
+          close(response_fd);
+
           break;
         }
 
@@ -121,6 +125,50 @@ void handle_fifo(int fd, bool is_main_fifo)
           perror("[ERROR] Couldn't remove user's directory.");
           break;
         }
+
+        // open response fifo
+        char response_path[100];
+        snprintf(response_path, 100, "tmp/concordia/%s", m.sender);
+
+        int response_fd = open(response_path, O_WRONLY);
+        if (response_fd == -1)
+        {
+          perror("[ERROR] Couldn't open response FIFO");
+
+          // create response message
+          MESSAGE response;
+          strncpy(response.sender, "server", STRING_SIZE);
+          strncpy(response.receiver, m.sender, STRING_SIZE);
+          response.type = user_deactivate;
+          strncpy(response.message, "failed", STRING_SIZE);
+          response.timestamp = time(NULL);
+
+          // send response
+          r = write(response_fd, &response, sizeof(MESSAGE));
+
+          // close response fifo
+          close(response_fd);
+
+          break;
+        }
+
+        // create response message
+        MESSAGE response;
+        strncpy(response.sender, "server", STRING_SIZE);
+        strncpy(response.receiver, m.sender, STRING_SIZE);
+        response.type = user_deactivate;
+        strncpy(response.message, "success", STRING_SIZE);
+        response.timestamp = time(NULL);
+
+        // send response
+        r = write(response_fd, &response, sizeof(MESSAGE));
+
+        // close response fifo
+        close(response_fd);
+
+        printf("> User '%s' deactivated.\n", m.sender);
+        fflush(stdout);
+
         break;
       }
 
@@ -161,45 +209,47 @@ int main(int argc, char *argv[])
   printf("> AD FIFO created.\n");
   fflush(stdout);
 
+  // open main fifo for reading and writing
+  int main_fd = open("tmp/main_fifo", O_RDWR);
+  if (main_fd == -1)
+  {
+    perror("[ERROR] Couldn't open main FIFO");
+    return -1;
+  }
+
+  printf("> Main FIFO opened.\n");
+  fflush(stdout);
+
+  // open AD fifo for reading and writing
+  int ad_fd = open("tmp/ad_fifo", O_RDWR);
+  if (ad_fd == -1)
+  {
+    perror("[ERROR] Couldn't open AD FIFO");
+    return -1;
+  }
+
+  printf("> AD FIFO opened.\n");
+  fflush(stdout);
+
   // handle both fifos concurrently
   pid_t pid = fork();
   if (pid == 0) // child process
   {
-    // open AD fifo for reading
-    int ad_fd = open("tmp/ad_fifo", O_RDONLY);
-    if (ad_fd == -1)
-    {
-      perror("[ERROR] Couldn't open AD FIFO");
-      return -1;
-    }
-
-    printf("> AD FIFO opened.\n");
-    fflush(stdout);
-
-    // int keep_open = open("tmp/ad_fifo", O_WRONLY);
-
-    handle_fifo(ad_fd, false);
-
+    // close write end of AD fifo
     close(ad_fd);
-  }
-  else // parent process
-  {
-    // open main fifo for reading
-    int main_fd = open("tmp/main_fifo", O_RDONLY);
-    if (main_fd == -1)
-    {
-      perror("[ERROR] Couldn't open main FIFO");
-      return -1;
-    }
-
-    printf("> Main FIFO opened.\n");
-    fflush(stdout);
-
-    // int keep_open = open("tmp/main_fifo", O_WRONLY);
 
     handle_fifo(main_fd, true);
 
     close(main_fd);
+  }
+  else // parent process
+  {
+    // close write end of main fifo
+    close(main_fd);
+
+    handle_fifo(ad_fd, false);
+
+    close(ad_fd);
   }
 
   unlink("tmp/main_fifo");

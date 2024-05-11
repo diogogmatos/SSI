@@ -100,6 +100,11 @@ int main(int argc, char *argv[])
   printf("User '%s' activated.\n", username);
   fflush(stdout);
 
+  // close fifo
   close(fd);
+
+  // remove fifo
+  unlink(path);
+
   return 0;
 }
