@@ -44,6 +44,7 @@ int main(int argc, char *argv[])
     return -1;
   }
 
+  umask(000);
   // create response fifo
   char path[100];
   snprintf(path, 100, "tmp/concordia/%s", username);
@@ -102,6 +103,7 @@ int main(int argc, char *argv[])
   printf("User '%s' deactivated.\n", username);
   fflush(stdout);
 
+  umask(022);
   // close fifo
   close(fd);
 

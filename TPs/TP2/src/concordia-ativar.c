@@ -27,6 +27,7 @@ int main(int argc, char *argv[])
   char path[100];
   snprintf(path, 100, "tmp/concordia/%s", username);
 
+  umask(000);
   int r = mkfifo(path, 0666);
   if (r == -1)
   {
