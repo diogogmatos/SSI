@@ -2,7 +2,6 @@ SRCDIR := src
 OBJDIR := obj
 BINDIR := bin
 TMPDIR := tmp
-TMPDIRUSERS := $(TMPDIR)/concordia
 USERDIR := concordia
 
 CC := gcc
@@ -16,7 +15,7 @@ SCRIPT_OBJS := $(addprefix $(OBJDIR)/, $(addsuffix.o, $(SCRIPTS)))
 EXEC := $(addprefix $(BINDIR)/, $(SCRIPTS))
 
 # Ensure directories exist
-$(shell mkdir -p $(OBJDIR) $(BINDIR) $(TMPDIR) $(TMPDIRUSERS))
+$(shell mkdir -p $(OBJDIR) $(BINDIR))
 
 .PHONY: all
 all: $(EXEC)
@@ -29,7 +28,7 @@ $(OBJDIR)/%.o: $(SRCDIR)/%.c
 
 .PHONY: clean
 clean:
-	@rm -rf $(OBJDIR)/* $(BINDIR)/* $(TMPDIR)/*
+	@rm -rf $(OBJDIR)/* $(BINDIR)/* $(TMPDIR)
 
 clean-users:
 	@rm -rf $(USERDIR)/*

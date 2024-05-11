@@ -7,6 +7,8 @@
 #include <sys/types.h>
 #include <time.h>
 
+#include "../src/lib.c"
+
 #define STRING_SIZE 100
 
 typedef enum _message_type
@@ -33,13 +35,6 @@ typedef struct _message
 
 typedef int file_d;
 
-/**
- * @brief Function to serialize a message
- *
- * @param message MESSAGE to be serialized
- * @param buffer Buffer to store the serialized message
- * @param buffer_size Buffer size
- */
-void serializeMESSAGE(MESSAGE *message, char *buffer, size_t buffer_size);
+char *get_username();
 
 #endif

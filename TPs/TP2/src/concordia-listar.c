@@ -1,4 +1,4 @@
-#include "lib.h"
+#include "../includes/lib.h"
 #include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -24,7 +24,7 @@ int main(int argc, char *argv[]) {
     return 1;
   }
 
-  char *username = getlogin();
+  char *username = get_username();
 
   if (username == NULL) {
     perror("Error getting username");

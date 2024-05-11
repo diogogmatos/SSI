@@ -1,4 +1,4 @@
-#include "lib.h"
+#include "../includes/lib.h"
 #include <stdlib.h>
 
 MESSAGE *dequeueMESSAGE() { return; }

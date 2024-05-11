@@ -11,6 +11,18 @@
 #include <time.h>
 #include <unistd.h>
 
+int execute_command(char *command)
+{
+  int status = system(command);
+  if (status == 0)
+    return 0;
+  else
+  {
+    perror("[ERROR] Failed to execute command");
+    return -1;
+  }
+}
+
 int set_permissions(char *username, char *permissions, char *dir_path)
 {
   // set command
@@ -18,16 +30,7 @@ int set_permissions(char *username, char *permissions, char *dir_path)
   snprintf(execute, 100, "setfacl -m u:%s:%s %s", username, permissions, dir_path);
 
   // execute command
-  int status = system(execute);
-  if (status == 0)
-    return 0;
-  else
-  {
-    char msg[100];
-    snprintf(msg, 100, "[ERROR] Failed to set permissions for %s", username);
-    perror(msg);
-    return -1;
-  }
+  execute_command(execute);
 }
 
 void handle_fifo(int fd, bool is_main_fifo)
@@ -187,6 +190,20 @@ void handle_fifo(int fd, bool is_main_fifo)
 
 int main(int argc, char *argv[])
 {
+  // ensure permissions are not masked
+  umask(000);
+
+  // create tmp directory
+  int r = mkdir("tmp", 0755);
+  if (r == -1)
+  {
+    perror("[ERROR] Couldn't create tmp directory");
+    return -1;
+  }
+
+  // create tmp/concordia directory
+  r = mkdir("tmp/concordia", 0777);
+
   // create main fifo
   int r1 = mkfifo("tmp/main_fifo", 0666);
   if (r1 == -1)
@@ -254,6 +271,8 @@ int main(int argc, char *argv[])
 
   unlink("tmp/main_fifo");
   unlink("tmp/ad_fifo");
+  unlink("tmp/concordia");
+  unlink("tmp");
 
   return 0;
 }
