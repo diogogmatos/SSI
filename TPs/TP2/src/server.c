@@ -197,7 +197,7 @@ void handle_fifo(int fd, bool is_main_fifo, MESSAGE *queue, int *current_index)
         char group_path[100];
         snprintf(group_path, 100, "concordia/%s", m.message);
         // create group's directory
-        int r = mkdir(group_path, 0755);
+        int r = mkdir(group_path, 0700);
         if (r == -1)
         { 
           char error[100];
@@ -222,7 +222,7 @@ void handle_fifo(int fd, bool is_main_fifo, MESSAGE *queue, int *current_index)
         }
 
         // set permissions
-        set_permissions(m.sender, "rwx", path);
+        set_permissions(m.sender, "rwx", group_path);
 
         // create response message
         MESSAGE response;

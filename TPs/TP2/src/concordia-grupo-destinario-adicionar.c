@@ -14,7 +14,7 @@ int main(int argc, char *argv[]) {
     char *group = argv[2];
     char path[100];
 
-    sprintf(path, "concordia/%s", group);
+    sprintf(path, "concordia/%s/messages", group);
     
     sprintf(command, "setfacl -R -m u:%s:rwx %s", user, path);
 
