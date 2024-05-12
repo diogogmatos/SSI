@@ -32,7 +32,7 @@ int main(int argc, char *argv[]) {
   umask(000);
   char path[150] = "tmp/concordia/";
   strcat(path, username);
-  int response = mkfifo(path, O_RDONLY);
+  int response = mkfifo(path, 0666);
   if (response == -1) {
     perror("Error creating response FIFO");
     return 1;
