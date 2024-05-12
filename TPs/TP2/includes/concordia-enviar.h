@@ -1,4 +1,0 @@
-#ifndef CONCORDIAENVIAR_H
-#define CONCORDIAENVIAR_H
-
-#endif

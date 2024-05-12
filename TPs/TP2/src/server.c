@@ -13,6 +13,12 @@
 
 #define QUEUE_SIZE 1024
 
+typedef struct _queue
+{
+  MESSAGE messages[QUEUE_SIZE];
+  int current_index;
+} QUEUE;
+
 int execute_command(char *command)
 {
   int status = system(command);
@@ -35,7 +41,7 @@ int set_permissions(char *username, char *permissions, char *dir_path)
   execute_command(execute);
 }
 
-void handle_fifo(int fd, bool is_main_fifo, MESSAGE *queue, int *current_index)
+void handle_fifo(int fd, bool is_main_fifo, QUEUE *queue)
 {
   MESSAGE m;
   int bytes_read;
@@ -62,10 +68,6 @@ void handle_fifo(int fd, bool is_main_fifo, MESSAGE *queue, int *current_index)
 
     if (valid)
     {
-      char *str = message_to_string(m);
-      printf("> New message received.\n%s", str);
-      fflush(stdout);
-
       switch (m.type)
       {
       case user_activate:
@@ -245,10 +247,13 @@ void handle_fifo(int fd, bool is_main_fifo, MESSAGE *queue, int *current_index)
       }
       case user_message:
       {
-        queue[*current_index] = m;
-        current_index++;
-        printf("> Message from %s: %s\n", m.sender, m.message);
+        // store new message in queue
+        queue->messages[queue->current_index] = m;
+        queue->current_index++;
+
+        printf("> New message received from '%s'\n", m.sender);
         fflush(stdout);
+
         break;
       }
 
@@ -264,19 +269,47 @@ void handle_fifo(int fd, bool is_main_fifo, MESSAGE *queue, int *current_index)
           perror("[ERROR] Couldn't open response FIFO");
           break;
         }
-        for (int i = 0; i < current_index; i++)
+
+        // send all new messages
+        int i;
+        for (i = 0; i < queue->current_index; i++)
         {
-          MESSAGE message = queue[i];
-          if (strcmp(message.receiver, m.sender) == 0)
+          MESSAGE stored_msg = queue->messages[i];
+
+          // if message receiver is the user that sent the list command
+          if (strcmp(stored_msg.receiver, m.sender) == 0)
           {
-            int r = write(response_fd, &message, sizeof(MESSAGE));
+            // send message
+            int r = write(response_fd, &stored_msg, sizeof(MESSAGE));
             if (r == -1)
             {
-              perror("[ERROR] Couldn't write to response FIFO");
+              perror("[ERROR] Couldn't send stored message");
               break;
             }
           }
         }
+
+        // create final response message
+        MESSAGE response;
+        strncpy(response.sender, "server", STRING_SIZE);
+        strncpy(response.receiver, m.sender, STRING_SIZE);
+        response.type = user_list_message;
+        strncpy(response.message, "end", STRING_SIZE);
+        response.timestamp = time(NULL);
+
+        // send response
+        int r = write(response_fd, &response, sizeof(MESSAGE));
+        if (r == -1)
+        {
+          perror("[ERROR] Couldn't send response message");
+        }
+
+        // close response fifo
+        close(response_fd);
+
+        printf("> New messages sent to user '%s'.\n", m.sender);
+        fflush(stdout);
+
         break;
       }
       case user_respond_message:
@@ -299,11 +332,6 @@ int main(int argc, char *argv[])
 
   // create tmp directory
   int r = mkdir("tmp", 0755);
-  if (r == -1)
-  {
-    perror("[ERROR] Couldn't create tmp directory");
-    return -1;
-  }
 
   // create tmp/concordia directory
   r = mkdir("tmp/concordia", 0777);
@@ -363,11 +391,11 @@ int main(int argc, char *argv[])
     close(ad_fd);
 
     // create message queue
-    MESSAGE queue[QUEUE_SIZE];
-    int current_index = 0;
+    QUEUE queue;
+    queue.current_index = 0;
 
     // handle main fifo
-    handle_fifo(main_fd, true, queue, &current_index);
+    handle_fifo(main_fd, true, &queue);
 
     close(main_fd);
   }
@@ -377,7 +405,7 @@ int main(int argc, char *argv[])
     close(main_fd);
 
     // handle AD fifo
-    handle_fifo(ad_fd, false, NULL, NULL);
+    handle_fifo(ad_fd, false, NULL);
 
     close(ad_fd);
   }

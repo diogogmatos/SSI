@@ -51,6 +51,7 @@ int main(int argc, char *argv[])
     return -1;
   }
 
+  // close main FIFO
   close(fd);
 
   // open response fifo for reading
@@ -69,6 +70,10 @@ int main(int argc, char *argv[])
     perror("[ERROR] Couldn't read response");
     return -1;
   }
+
+  // close and remove response fifo
+  close(fd);
+  unlink(path);
 
   // check if user creation was successful
   if (strcmp(response.message, "failed") == 0)
@@ -101,12 +106,6 @@ int main(int argc, char *argv[])
 
   printf("User '%s' activated.\n", username);
   fflush(stdout);
-
-  // close fifo
-  close(fd);
-
-  // remove fifo
-  unlink(path);
 
   return 0;
 }

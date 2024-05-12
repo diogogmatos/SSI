@@ -5,84 +5,135 @@
 #include <string.h>
 #include <unistd.h>
 
-
-#define BLOCK_SIZE 16
-
-int main(int argc, char *argv[]) {
-  if (argc < 2) {
-    char buffer[100];
-    snprintf(buffer, 100, "Usage: %s [-a]\n",
-             argv[0]);
-    write(1, buffer, strlen(buffer));
-    return 1;
-  }
-
-  int fd = open("tmp/main_fifo", O_WRONLY);
-  if (fd == -1) {
-    perror("Error opening FIFO for writing");
-    return 1;
-  }
-
+int main(int argc, char *argv[])
+{
+  // get username
   char *username = get_username();
-  if (username == NULL) {
-    perror("Error getting username");
-    return 1;
+  if (username == NULL)
+  {
+    perror("[ERROR] Couldn't get username");
+    return -1;
   }
+
+  // get received messages path
+  char *received_path[100];
+  snprintf(received_path, 100, "concordia/%s/received", username);
+
+  // count messages
+  int nr_msgs = count_files_in_dir(received_path);
+  if (nr_msgs == -1)
+  {
+    return -1;
+  }
+
+  // if -a option is passed, print saved messages
+  if (argc == 2 && strcmp(argv[1], "-a") == 0)
+  {
+    // print all messages
+    for (int i = 1; i <= nr_msgs; i++)
+    {
+      char *message_path[100];
+      snprintf(message_path, 100, "%s/%d", received_path, i);
+
+      int message_fd = open(message_path, O_RDONLY);
+      if (message_fd == -1)
+      {
+        perror("[ERROR] Couldn't open message file");
+        return -1;
+      }
+
+      MESSAGE m = file_to_message(message_fd);
+
+      // print message
+      char *str = message_to_string(m, true);
+      printf("Mensagem #%d)\n%s\n", i, str);
+      fflush(stdout);
+
+      // close message file
+      close(message_fd);
+    }
+  }
+
+  // create response fifo
+  char path[100];
+  snprintf(path, 100, "tmp/concordia/%s", username);
 
   umask(000);
-  char path[150] = "tmp/concordia/";
-  strcat(path, username);
-  int response = mkfifo(path, 0666);
-  if (response == -1) {
-    perror("Error creating response FIFO");
-    return 1;
+  int r = mkfifo(path, 0666);
+  if (r == -1)
+  {
+    perror("[ERROR] Couldn't create response FIFO");
+    return -1;
   }
 
-  MESSAGE message;
-  snprintf(message.sender, STRING_SIZE, "%s", username);
-  snprintf(message.receiver, STRING_SIZE, "server");
-  message.timestamp = time(NULL);
-  message.type = user_list_message;
-  strncpy(message.message, "", STRING_SIZE);
-
-  int r = write(fd, &message, sizeof(MESSAGE));
-  if (r == -1) {
-    perror("Error writing to FIFO");
-    return 1;
+  // open main FIFO for writing
+  int fd = open("tmp/main_fifo", O_WRONLY);
+  if (fd == -1)
+  {
+    perror("[ERROR] Couldn't open main FIFO");
+    return -1;
   }
 
+  // create message to send
   MESSAGE m;
-  int read_bytes = 0;
-  int number = 0;
-  while(read_bytes = read(response, &m, sizeof(MESSAGE))) {
-    if (read_bytes == -1) {
-      perror("Error reading from FIFO");
-      return 1;
+  strncpy(m.sender, username, STRING_SIZE);
+  strncpy(m.receiver, "server", STRING_SIZE);
+  m.type = user_list_message;
+  strncpy(m.message, "", STRING_SIZE);
+  m.timestamp = time(NULL);
+
+  // send message
+  r = write(fd, &m, sizeof(MESSAGE));
+  if (r == -1)
+  {
+    perror("[ERROR] Couldn't send message");
+    return -1;
+  }
+
+  // close main FIFO
+  close(fd);
+
+  // open response fifo for reading
+  fd = open(path, O_RDWR);
+  if (fd == -1)
+  {
+    perror("[ERROR] Couldn't open response FIFO");
+    return -1;
+  }
+
+  // wait for response
+  MESSAGE response;
+  int bytes_read;
+
+  while ((bytes_read = read(fd, &response, sizeof(MESSAGE))) > 0 && strcmp(response.message, "end") != 0)
+  {
+    nr_msgs++;
+
+    // write message to file
+    char *message_path[100];
+    snprintf(message_path, 100, "%s/%d", received_path, nr_msgs);
+
+    int message_fd = open(message_path, O_WRONLY | O_CREAT, 0700);
+    if (message_fd == -1)
+    {
+      perror("[ERROR] Couldn't open/create message file");
+      return -1;
     }
-    number++;
-    printf("Message from %s: %s\n", message.sender, message.message);
 
-    char* message_path;
-    snprintf(message_path, 100, "concordia/%s/received/%d", username, number);
+    message_to_file(message_fd, response);
 
-    int message_fd = open(message_path, O_WRONLY | O_CREAT, 0666);
-    if (message_fd == -1) {
-      perror("Error opening message file");
-      return 1;
-    }
-    
-    write(message_fd, m.sender, sizeof(char) * strlen(m.sender));
-    write(message_fd, "/n", 1);
-    write(message_fd, m.receiver, sizeof(char) * strlen(m.receiver));
-    write(message_fd, "/n", 1);
-    write(message_fd, m.message, sizeof(char) * strlen(m.message));
-    write(message_fd, "/n", 1);
+    // print message
+    char *str = message_to_string(response, true);
+    printf("Mensagem #%d:\n%s\n", nr_msgs, str);
+    fflush(stdout);
 
+    // close message file
     close(message_fd);
   }
 
+  // close and remove response fifo
   close(fd);
-  close(response);
-  
+  unlink(path);
+
   return 0;
 }
