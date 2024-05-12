@@ -11,6 +11,8 @@
 #include <time.h>
 #include <unistd.h>
 
+#define QUEUE_SIZE 1024
+
 int execute_command(char *command)
 {
   int status = system(command);
@@ -33,13 +35,10 @@ int set_permissions(char *username, char *permissions, char *dir_path)
   execute_command(execute);
 }
 
-void handle_fifo(int fd, bool is_main_fifo)
+void handle_fifo(int fd, bool is_main_fifo, MESSAGE *queue, int *current_index)
 {
   MESSAGE m;
   int bytes_read;
-
-  MESSAGE queue[1024];
-  int current_index = 0;
 
   while ((bytes_read = read(fd, &m, sizeof(MESSAGE))) > 0)
   {
@@ -55,18 +54,18 @@ void handle_fifo(int fd, bool is_main_fifo)
       int r = open(path, O_RDONLY);
       if (r == -1)
       {
-        perror("[ERROR] User doesn't exist.");
+        perror("[ERROR] User doesn't exist");
         valid = false;
       }
+      close(r);
     }
-
-    printf("> Received message from %s\n", m.sender);
-    printf("> Message: %s\n", m.message);
-    printf("> Type: %s\n", message_type_str[m.type]);
-    fflush(stdout);
 
     if (valid)
     {
+      char *str = message_to_string(m);
+      printf("> New message received.\n%s", str);
+      fflush(stdout);
+
       switch (m.type)
       {
       case user_activate:
@@ -185,7 +184,7 @@ void handle_fifo(int fd, bool is_main_fifo)
 
       case user_message:
       {
-        queue[current_index] = m;
+        queue[*current_index] = m;
         current_index++;
         printf("> Message from %s: %s\n", m.sender, m.message);
         fflush(stdout);
@@ -204,10 +203,10 @@ void handle_fifo(int fd, bool is_main_fifo)
           perror("[ERROR] Couldn't open response FIFO");
           break;
         }
-        for(int i = 0; i < current_index; i++)
+        for (int i = 0; i < current_index; i++)
         {
           MESSAGE message = queue[i];
-          if(strcmp(message.receiver, m.sender) == 0)
+          if (strcmp(message.receiver, m.sender) == 0)
           {
             int r = write(response_fd, &message, sizeof(MESSAGE));
             if (r == -1)
@@ -218,7 +217,6 @@ void handle_fifo(int fd, bool is_main_fifo)
           }
         }
         break;
-
       }
       case user_respond_message:
       {
@@ -248,6 +246,9 @@ int main(int argc, char *argv[])
 
   // create tmp/concordia directory
   r = mkdir("tmp/concordia", 0777);
+
+  // create concordia directory
+  r = mkdir("concordia", 0755);
 
   // create main fifo
   int r1 = mkfifo("tmp/main_fifo", 0666);
@@ -300,7 +301,12 @@ int main(int argc, char *argv[])
     // close write end of AD fifo
     close(ad_fd);
 
-    handle_fifo(main_fd, true);
+    // create message queue
+    MESSAGE queue[QUEUE_SIZE];
+    int current_index = 0;
+
+    // handle main fifo
+    handle_fifo(main_fd, true, queue, &current_index);
 
     close(main_fd);
   }
@@ -309,7 +315,8 @@ int main(int argc, char *argv[])
     // close write end of main fifo
     close(main_fd);
 
-    handle_fifo(ad_fd, false);
+    // handle AD fifo
+    handle_fifo(ad_fd, false, NULL, NULL);
 
     close(ad_fd);
   }
@@ -318,6 +325,7 @@ int main(int argc, char *argv[])
   unlink("tmp/ad_fifo");
   unlink("tmp/concordia");
   unlink("tmp");
+  unlink("concordia");
 
   return 0;
 }

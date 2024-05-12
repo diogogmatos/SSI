@@ -25,8 +25,7 @@ const char *message_type_str[] = {
     "user_deactivate",
     "user_message",
     "user_list_message",
-    "user_respond_message"
-};
+    "user_respond_message"};
 
 typedef struct _message
 {
@@ -40,5 +39,12 @@ typedef struct _message
 typedef int file_d;
 
 char *get_username();
+
+char *message_to_string(MESSAGE m)
+{
+  char *str = malloc(sizeof(char) * 1000);
+  snprintf(str, 1000, "sender: %s\nreceiver: %s\ntype: %s\nmessage: %s\ntime: %s", m.sender, m.receiver, message_type_str[m.type], m.message, ctime(&m.timestamp));
+  return str;
+}
 
 #endif

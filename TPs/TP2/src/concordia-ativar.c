@@ -91,6 +91,7 @@ int main(int argc, char *argv[])
 
   // create received directory
   sprintf(dir_path, "concordia/%s/received", username);
+
   r = mkdir(dir_path, 0700);
   if (r == -1)
   {

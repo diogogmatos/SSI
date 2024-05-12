@@ -31,7 +31,7 @@ clean:
 	@rm -rf $(OBJDIR)/* $(BINDIR)/* $(TMPDIR)
 
 clean-users:
-	@rm -rf $(USERDIR)/*
+	@rm -rf $(USERDIR)
 
 rebuild:
 	@make clean
