@@ -4,16 +4,19 @@
 #include <unistd.h>
 
 int main(int argc, char *argv[]) {
-    if (argc != 2) {
-        printf("Usage: %s <user> <folder_path>\n", argv[0], argv[1]);
+    if (argc != 3) {
+        printf("Usage: %s <user> <group>\n", argv[0], argv[1]);
         return 1;
     }
 
     char command[150];
     char *user = argv[1];
-    char *folder_path = argv[2];
-    
-    sprintf(command, "setfacl -x u:%s %s", user, folder_path);
+    char *group = argv[2];
+    char path[100];
+
+    sprintf(path, "concordia/%s", group);
+    printf("%s\n", path);
+    sprintf(command, "setfacl -x u:%s %s", user, path);
 
     int status = system(command);
 

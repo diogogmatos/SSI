@@ -4,24 +4,21 @@
 #include <unistd.h>
 
 int main(int argc, char *argv[]) {
-    if (argc != 3) {
-        printf("Usage: %s <group> <folder_path>\n", argv[0]);
+    if (argc != 2) {
+        printf("Usage: %s <group>\n", argv[0]);
         return 1;
     }
 
     char *group = argv[1];
-    char *folder_path = argv[2];
-
+    char* path[100];
+    sprintf(path, "rm -rf concordia/%s/messages", group);
     char command[150];
 
-    sprintf(command, "setfacl -x g:%s %s", group, folder_path);
-
-    int status = system(command);
-    
+    int status = system(path);
     if (status == 0) {
-        printf("Permissions set successfully for %s. Access restricted for others.\n", folder_path);
+        printf("Group %s removed successifly.\n", group);
     } else {
-        printf("Failed to set permissions for %s.\n", folder_path);
+        printf("Failed to remove group %s.\n", group);
     }
 
     return 0;

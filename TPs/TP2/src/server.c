@@ -181,7 +181,68 @@ void handle_fifo(int fd, bool is_main_fifo, MESSAGE *queue, int *current_index)
 
         break;
       }
+      case create_group:
+      {
+        // open response fifo
+        char response_path[100];
+        snprintf(response_path, 100, "tmp/concordia/%s", m.message);
 
+        int response_fd = open(response_path, O_WRONLY);
+        if (response_fd == -1)
+        {
+          perror("[ERROR] Couldn't open response FIFO");
+          break;
+        }
+
+        char group_path[100];
+        snprintf(group_path, 100, "concordia/%s", m.message);
+        // create group's directory
+        int r = mkdir(group_path, 0755);
+        if (r == -1)
+        { 
+          char error[100];
+          snprintf(error, 100, "[ERROR] Couldn't create group's directory %s", path);
+          perror(error);
+
+          // create response message
+          MESSAGE response;
+          strncpy(response.sender, "server", STRING_SIZE);
+          strncpy(response.receiver, m.sender, STRING_SIZE);
+          response.type = user_activate;
+          strncpy(response.message, "failed", STRING_SIZE);
+          response.timestamp = time(NULL);
+
+          // send response
+          r = write(response_fd, &response, sizeof(MESSAGE));
+
+          // close response fifo
+          close(response_fd);
+
+          break;
+        }
+
+        // set permissions
+        set_permissions(m.sender, "rwx", path);
+
+        // create response message
+        MESSAGE response;
+        strncpy(response.sender, "server", STRING_SIZE);
+        strncpy(response.receiver, m.sender, STRING_SIZE);
+        response.type = user_activate;
+        strncpy(response.message, "success", STRING_SIZE);
+        response.timestamp = time(NULL);
+
+        // send response
+        r = write(response_fd, &response, sizeof(MESSAGE));
+
+        // close response fifo
+        close(response_fd);
+
+        printf("> Group '%s' folder created.\n", m.message);
+        fflush(stdout);
+
+        break;
+      }
       case user_message:
       {
         queue[*current_index] = m;
