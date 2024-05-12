@@ -198,15 +198,6 @@ void handle_fifo(int fd, bool is_main_fifo)
 
       case user_list_message:
       {
-        char fifo_path[100];
-        snprintf(fifo_path, 100, "tmp/main_fifo");
-        int fifo_fd = open(fifo_path, O_RDONLY);
-        if (fifo_fd == -1)
-        {
-          perror("[ERROR] Couldn't open main FIFO");
-          break;
-        }
-
         // open response fifo
         char response_path[100];
         snprintf(response_path, 100, "tmp/concordia/%s", m.sender);
@@ -233,7 +224,12 @@ void handle_fifo(int fd, bool is_main_fifo)
         break;
 
       }
-
+      case user_respond_message:
+      {
+        char fifo_path[100];
+        snprintf(fifo_path, 100, "tmp/main_fifo");
+        int fifo;
+      }
       default:
         break;
       }

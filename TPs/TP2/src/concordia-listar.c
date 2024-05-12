@@ -83,7 +83,5 @@ int main(int argc, char *argv[]) {
     close(message_fd);
   }
 
-  umask(022);
-
   return 0;
 }

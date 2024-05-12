@@ -16,13 +16,16 @@ typedef enum _message_type
   user_activate,
   user_deactivate,
   user_message,
-  user_list_message
+  user_list_message,
+  user_respond_message
 } MESSAGE_TYPE;
 
 const char *message_type_str[] = {
     "user_activate",
     "user_deactivate",
     "user_message",
+    "user_list_message",
+    "user_respond_message"
 };
 
 typedef struct _message

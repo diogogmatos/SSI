@@ -9,29 +9,14 @@
 #define BLOCK_SIZE 16
 
 int main(int argc, char *argv[]) {
-  if (argc < 3) {
+  if(argc < 2) {
     char buffer[100];
-    snprintf(buffer, 100, "Usage: %s [-a]\n",
-             argv[0]);
+    snprintf(buffer, 100, "Usage: %s <path>\n", argv[0]);
     write(1, buffer, strlen(buffer));
     return 1;
   }
 
-  int fd = open("tmp/main_fifo", O_WRONLY);
-
-  if (fd == -1) {
-    perror("Error opening FIFO for writing");
-    return 1;
-  }
-
-  char *username = get_username();
-
-  if (username == NULL) {
-    perror("Error getting username");
-    return 1;
-  }
-
-
-  close(fd);
+  execl("/bin/rm", "rm", argv[1], NULL);
+  
   return 0;
 }

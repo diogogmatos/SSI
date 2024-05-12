@@ -70,7 +70,7 @@ int main(int argc, char *argv[])
 
   // make the code to write to the sent folder
   char sent_path[100];
-  snprintf(sent_path, 100, "concordia/%s/sent/%s", username, message.sender);
+  snprintf(sent_path, 100, "concordia/%s/sent/%s.txt", username, message.receiver);
 
   int sent = open(sent_path, O_WRONLY | O_CREAT, 0666);
   if (sent == -1)
@@ -83,7 +83,7 @@ int main(int argc, char *argv[])
   write(sent, "\n", 1);
   write(sent, message.receiver, strlen(message.receiver) * sizeof(char));
   write(sent, "\n", 1);
-  write(sent, message.message, strlen(message.message) * sizeof(char));
+  write(sent, argv[2], message_len * sizeof(char));
   write(sent, "\n", 1);
 
   close(sent);
