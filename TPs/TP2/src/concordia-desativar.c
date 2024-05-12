@@ -16,10 +16,10 @@ int main(int argc, char *argv[])
   }
 
   // remove sent directory
-  char dir_path[100];
-  snprintf(dir_path, 100, "concordia/%s/sent", username);
+  char command[100];
+  snprintf(command, 100, "rm -rf concordia/%s/sent", username);
 
-  int r = rmdir(dir_path);
+  int r = system(command);
   if (r == -1)
   {
     perror("[ERROR] Couldn't remove sent directory");
@@ -27,9 +27,9 @@ int main(int argc, char *argv[])
   }
 
   // remove received directory
-  sprintf(dir_path, "concordia/%s/received", username);
+  sprintf(command, "rm -rf concordia/%s/received", username);
 
-  r = rmdir(dir_path);
+  r = system(command);
   if (r == -1)
   {
     perror("[ERROR] Couldn't remove received directory");

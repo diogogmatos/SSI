@@ -71,7 +71,8 @@ void handle_fifo(int fd, bool is_main_fifo, QUEUE *queue)
       switch (m.type)
       {
       case user_activate:
-      {
+      { 
+        set_permissions(m.sender, "rwx", "tmp/main_fifo");
         // open response fifo
         char response_path[100];
         snprintf(response_path, 100, "tmp/concordia/%s", m.sender);
@@ -325,6 +326,30 @@ void handle_fifo(int fd, bool is_main_fifo, QUEUE *queue)
   }
 }
 
+void process_directory(const char *dirname) {
+    DIR *dir;
+    struct dirent *entry;
+
+    // Open the directory
+    dir = opendir(dirname);
+    if (dir == NULL) {
+        perror("opendir");
+        return;
+    }
+
+    // Read directory entries
+    while ((entry = readdir(dir)) != NULL) {
+        // Exclude current directory and parent directory entries
+        if (strcmp(entry->d_name, ".") != 0 && strcmp(entry->d_name, "..") != 0) {
+            // Apply function to the name
+            set_permissions(entry->d_name, "rwx", "tmp/main_fifo");
+        }
+    }
+
+    // Close directory
+    closedir(dir);
+}
+
 int main(int argc, char *argv[])
 {
   // ensure permissions are not masked
@@ -340,7 +365,7 @@ int main(int argc, char *argv[])
   r = mkdir("concordia", 0755);
 
   // create main fifo
-  int r1 = mkfifo("tmp/main_fifo", 0666);
+  int r1 = mkfifo("tmp/main_fifo", 0700);
   if (r1 == -1)
   {
     perror("[ERROR] Couldn't create main FIFO");
@@ -382,6 +407,8 @@ int main(int argc, char *argv[])
 
   printf("> AD FIFO opened.\n");
   fflush(stdout);
+
+  process_directory("concordia");
 
   // handle both fifos concurrently
   pid_t pid = fork();

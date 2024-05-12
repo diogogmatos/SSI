@@ -49,6 +49,7 @@ int main(int argc, char *argv[]) {
 
 
     close(fd);
+    unlink(path);
 
     fd = open(path, O_RDONLY);
     if (fd == -1)

@@ -86,12 +86,8 @@ int main(int argc, char *argv[])
     return 1;
   }
 
-  write(sent, message.sender, strlen(message.sender) * sizeof(char));
-  write(sent, "\n", 1);
-  write(sent, message.receiver, strlen(message.receiver) * sizeof(char));
-  write(sent, "\n", 1);
-  write(sent, argv[2], message_len * sizeof(char));
-  write(sent, "\n", 1);
+  char* message_str = message_to_string(message, true);
+  write(sent, message_str, strlen(message_str) * sizeof(char));
 
   close(sent);
 
