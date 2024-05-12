@@ -73,6 +73,7 @@ void handle_fifo(int fd, bool is_main_fifo, QUEUE *queue)
       case user_activate:
       { 
         set_permissions(m.sender, "rwx", "tmp/main_fifo");
+        set_permissions(m.sender, "rwx", "tmp/concordia/");
         // open response fifo
         char response_path[100];
         snprintf(response_path, 100, "tmp/concordia/%s", m.sender);
@@ -340,7 +341,7 @@ void process_directory(const char *dirname) {
     // Read directory entries
     while ((entry = readdir(dir)) != NULL) {
         // Exclude current directory and parent directory entries
-        if (strcmp(entry->d_name, ".") != 0 && strcmp(entry->d_name, "..") != 0) {
+        if (strcmp(entry->d_name, ".") != 0 && strcmp(entry->d_name, "..") != 0 && strncmp(entry->d_name, "group-", 6) != 0) {
             // Apply function to the name
             set_permissions(entry->d_name, "rwx", "tmp/main_fifo");
         }

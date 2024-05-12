@@ -49,7 +49,6 @@ int main(int argc, char *argv[]) {
 
 
     close(fd);
-    unlink(path);
 
     fd = open(path, O_RDONLY);
     if (fd == -1)
@@ -96,6 +95,8 @@ int main(int argc, char *argv[]) {
     } else {
         printf("Failed to set permissions for %s.\n", dir_path);
     }
+
+    unlink(path);
 
     return 0;
 }
