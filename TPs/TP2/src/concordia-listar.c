@@ -29,7 +29,8 @@ int main(int argc, char *argv[]) {
     return 1;
   }
 
-  char* path = "tmp/concordia/";
+  umask(000);
+  char path[150] = "tmp/concordia/";
   strcat(path, username);
   int response = mkfifo(path, O_RDONLY);
   if (response == -1) {
@@ -52,11 +53,6 @@ int main(int argc, char *argv[]) {
 
   close(fd);
 
-  response = open(path, O_RDONLY);
-  if (response == -1) {
-    perror("Error opening response FIFO");
-    return 1;
-  }
   MESSAGE m;
   int read_bytes = 0;
   int number = 0;
@@ -87,7 +83,7 @@ int main(int argc, char *argv[]) {
     close(message_fd);
   }
 
-
+  umask(022);
 
   return 0;
 }
