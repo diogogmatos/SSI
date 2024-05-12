@@ -38,6 +38,9 @@ void handle_fifo(int fd, bool is_main_fifo)
   MESSAGE m;
   int bytes_read;
 
+  MESSAGE queue[1024];
+  int current_index = 0;
+
   while ((bytes_read = read(fd, &m, sizeof(MESSAGE))) > 0)
   {
     bool valid = true;
@@ -177,8 +180,58 @@ void handle_fifo(int fd, bool is_main_fifo)
 
       case user_message:
       {
-        /* code */
+        char fifo_path[100];
+        snprintf(fifo_path, 100, "tmp/main_fifo");
+
+        int fifo_fd = open(fifo_path, O_RDONLY);
+        if (fifo_fd == -1)
+        {
+          perror("[ERROR] Couldn't open main FIFO");
+          break;
+        }
+
+        queue[current_index] = m;
+        current_index++;
+        
         break;
+      }
+
+      case user_list_message:
+      {
+        char fifo_path[100];
+        snprintf(fifo_path, 100, "tmp/main_fifo");
+        int fifo_fd = open(fifo_path, O_RDONLY);
+        if (fifo_fd == -1)
+        {
+          perror("[ERROR] Couldn't open main FIFO");
+          break;
+        }
+
+        // open response fifo
+        char response_path[100];
+        snprintf(response_path, 100, "tmp/concordia/%s", m.sender);
+
+        int response_fd = open(response_path, O_WRONLY);
+        if (response_fd == -1)
+        {
+          perror("[ERROR] Couldn't open response FIFO");
+          break;
+        }
+        for(int i = 0; i < current_index; i++)
+        {
+          MESSAGE message = queue[i];
+          if(strcmp(message.receiver, m.sender) == 0)
+          {
+            int r = write(response_fd, &message, sizeof(MESSAGE));
+            if (r == -1)
+            {
+              perror("[ERROR] Couldn't write to response FIFO");
+              break;
+            }
+          }
+        }
+        break;
+
       }
 
       default:

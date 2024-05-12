@@ -18,47 +18,8 @@ int main(int argc, char *argv[])
     return 1;
   }
 
+
   MESSAGE message;
-  snprintf(message.receiver, STRING_SIZE, "%s", argv[0]);
-  snprintf(message.sender, STRING_SIZE, "%s", argv[1]);
-
-  int total_length = 0;
-  for (int i = 2; i < argc; i++)
-  {
-    total_length += strlen(argv[i]) + 1;
-  }
-
-  strcpy(message.message, "");
-  for (int i = 2; i < argc; i++)
-  {
-    strcat(message.message, argv[i]);
-    if (i < argc - 1)
-    {
-      strcat(message.message, " ");
-    }
-  }
-
-  message.timestamp = time(NULL);
-  int type_len = strlen(argv[0]);
-  int receiver_len = strlen(argv[1]);
-  int message_len = strlen(argv[2]);
-
-  if (receiver_len > BLOCK_SIZE ||
-      message_len > 128)
-  {
-    char buffer[100];
-    snprintf(buffer, 100, "Data length exceeds block size\n");
-    write(1, buffer, strlen(buffer));
-    return 1;
-  }
-
-  int fd = open("tmp/main_fifo", O_WRONLY);
-  if (fd == -1)
-  {
-    perror("Error opening FIFO for writing");
-    return 1;
-  }
-
   char *username = get_username();
 
   if (username == NULL)
@@ -71,30 +32,61 @@ int main(int argc, char *argv[])
     snprintf(message.sender, STRING_SIZE, "%s", username);
   }
 
+  snprintf(message.receiver, STRING_SIZE, "%s", argv[1]);
+
+  int message_len = strlen(argv[2]);
+  int total_length = message_len + 1;
+
+  message.timestamp = time(NULL);
+  int type_len = user_list_message;
+
+  if (message_len > STRING_SIZE)
+  {
+    char buffer[100];
+    snprintf(buffer, 100, "Message length exceeds string size\n");
+    write(1, buffer, strlen(buffer));
+    return 1;
+  }
+
+  int fd = open("tmp/main_fifo", O_WRONLY);
+  if (fd == -1)
+  {
+    perror("Error opening FIFO for writing");
+    return 1;
+  }
+
   printf("MESSAGE: %s \nSize: %d\n", message.message, total_length);
   printf("Sender: %s\n", message.sender);
 
   // Type of message
-  write(fd, message_type_str[message.type], type_len);
-
-  // Separator
-  write(fd, "\n", 1);
-
-  // MESSAGE Receiver
-  write(fd, message.receiver, receiver_len);
-
-  // Separator
-  write(fd, "\n", 1);
-
-  // MESSAGE Body
-  write(fd, message.message, total_length);
-
-  // Separator
-  write(fd, "\n", 1);
-
-  // MESSAGE Sender
-  write(fd, message.sender, strlen(message.sender));
+  int rs = write(fd, &message, sizeof(MESSAGE));
+  if (rs == -1)
+  {
+    perror("Error writing to FIFO");
+    return 1;
+  }
 
   close(fd);
+
+  // make the code to write to the sent folder
+  char sent_path[100];
+  snprintf(sent_path, 100, "concordia/%s/sent/%s", username, message.sender);
+
+  int sent = open(sent_path, O_WRONLY | O_CREAT, 0666);
+  if (sent == -1)
+  {
+    perror("Error opening sent file");
+    return 1;
+  }
+
+  write(sent, message.sender, strlen(message.sender) * sizeof(char));
+  write(sent, "\n", 1);
+  write(sent, message.receiver, strlen(message.receiver) * sizeof(char));
+  write(sent, "\n", 1);
+  write(sent, message.message, strlen(message.message) * sizeof(char));
+  write(sent, "\n", 1);
+
+  close(sent);
+
   return 0;
 }

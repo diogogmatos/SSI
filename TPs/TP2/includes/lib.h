@@ -16,6 +16,7 @@ typedef enum _message_type
   user_activate,
   user_deactivate,
   user_message,
+  user_list_message
 } MESSAGE_TYPE;
 
 const char *message_type_str[] = {
