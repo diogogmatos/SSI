@@ -103,7 +103,6 @@ int main(int argc, char *argv[])
   printf("User '%s' deactivated.\n", username);
   fflush(stdout);
 
-  umask(022);
   // close fifo
   close(fd);
 

@@ -1,4 +1,6 @@
 #include "../includes/lib.h"
+#include "../includes/queue.h"
+
 #include <dirent.h>
 #include <fcntl.h>
 #include <stdbool.h>
@@ -10,14 +12,6 @@
 #include <sys/wait.h>
 #include <time.h>
 #include <unistd.h>
-
-#define QUEUE_SIZE 1024
-
-typedef struct _queue
-{
-  MESSAGE messages[QUEUE_SIZE];
-  int current_index;
-} QUEUE;
 
 int execute_command(char *command)
 {
@@ -71,7 +65,7 @@ void handle_fifo(int fd, bool is_main_fifo, QUEUE *queue)
       switch (m.type)
       {
       case user_activate:
-      { 
+      {
         set_permissions(m.sender, "rwx", "tmp/main_fifo");
         set_permissions(m.sender, "rwx", "tmp/concordia/");
         // open response fifo
@@ -185,6 +179,7 @@ void handle_fifo(int fd, bool is_main_fifo, QUEUE *queue)
 
         break;
       }
+
       case create_group:
       {
         // open response fifo
@@ -198,14 +193,14 @@ void handle_fifo(int fd, bool is_main_fifo, QUEUE *queue)
           break;
         }
 
+        // create group's directory
         char group_path[100];
         snprintf(group_path, 100, "concordia/%s", m.message);
-        // create group's directory
         int r = mkdir(group_path, 0700);
         if (r == -1)
-        { 
+        {
           char error[100];
-          snprintf(error, 100, "[ERROR] Couldn't create group's directory %s", path);
+          snprintf(error, 100, "[ERROR] Couldn't create group's directory '%s'", path);
           perror(error);
 
           // create response message
@@ -242,16 +237,18 @@ void handle_fifo(int fd, bool is_main_fifo, QUEUE *queue)
         // close response fifo
         close(response_fd);
 
-        printf("> Group '%s' folder created.\n", m.message);
+        printf("> New group '%s' created.\n", m.message);
         fflush(stdout);
 
         break;
       }
+
       case user_message:
       {
         // store new message in queue
-        queue->messages[queue->current_index] = m;
-        queue->current_index++;
+        int r = push_message(queue, m);
+        if (r == -1)
+          break;
 
         printf("> New message received from '%s'\n", m.sender);
         fflush(stdout);
@@ -272,11 +269,10 @@ void handle_fifo(int fd, bool is_main_fifo, QUEUE *queue)
           break;
         }
 
-        // send all new messages
-        int i;
-        for (i = 0; i < queue->current_index; i++)
+        // send all new messages to user
+        for (int i = queue->current_index; i > 0; i--)
         {
-          MESSAGE stored_msg = queue->messages[i];
+          MESSAGE stored_msg = pop_message(queue);
 
           // if message receiver is the user that sent the list command
           if (strcmp(stored_msg.receiver, m.sender) == 0)
@@ -314,12 +310,14 @@ void handle_fifo(int fd, bool is_main_fifo, QUEUE *queue)
 
         break;
       }
+
       case user_respond_message:
       {
         char fifo_path[100];
         snprintf(fifo_path, 100, "tmp/main_fifo");
         int fifo;
       }
+
       default:
         break;
       }
@@ -327,28 +325,32 @@ void handle_fifo(int fd, bool is_main_fifo, QUEUE *queue)
   }
 }
 
-void process_directory(const char *dirname) {
-    DIR *dir;
-    struct dirent *entry;
+void reapply_perms(const char *dirname)
+{
+  DIR *dir;
+  struct dirent *entry;
 
-    // Open the directory
-    dir = opendir(dirname);
-    if (dir == NULL) {
-        perror("opendir");
-        return;
+  // open directory
+  dir = opendir(dirname);
+  if (dir == NULL)
+  {
+    perror("opendir");
+    return;
+  }
+
+  // read directory entries
+  while ((entry = readdir(dir)) != NULL)
+  {
+    // exclude current directory and parent directory entries
+    if (strcmp(entry->d_name, ".") != 0 && strcmp(entry->d_name, "..") != 0)
+    {
+      // give rwx permission to the main FIFO for the user
+      set_permissions(entry->d_name, "rwx", "tmp/main_fifo");
     }
+  }
 
-    // Read directory entries
-    while ((entry = readdir(dir)) != NULL) {
-        // Exclude current directory and parent directory entries
-        if (strcmp(entry->d_name, ".") != 0 && strcmp(entry->d_name, "..") != 0 && strncmp(entry->d_name, "group-", 6) != 0) {
-            // Apply function to the name
-            set_permissions(entry->d_name, "rwx", "tmp/main_fifo");
-        }
-    }
-
-    // Close directory
-    closedir(dir);
+  // close directory
+  closedir(dir);
 }
 
 int main(int argc, char *argv[])
@@ -362,7 +364,7 @@ int main(int argc, char *argv[])
   // create tmp/concordia directory
   r = mkdir("tmp/concordia", 0777);
 
-  // create concordia directory
+  // create concordia directory, if it doesn't exist
   r = mkdir("concordia", 0755);
 
   // create main fifo
@@ -409,7 +411,8 @@ int main(int argc, char *argv[])
   printf("> AD FIFO opened.\n");
   fflush(stdout);
 
-  process_directory("concordia");
+  // reapply main FIFO permissions for existing users
+  reapply_perms("concordia");
 
   // handle both fifos concurrently
   pid_t pid = fork();
@@ -442,7 +445,6 @@ int main(int argc, char *argv[])
   unlink("tmp/ad_fifo");
   unlink("tmp/concordia");
   unlink("tmp");
-  unlink("concordia");
 
   return 0;
 }

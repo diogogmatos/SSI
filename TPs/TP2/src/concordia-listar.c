@@ -124,7 +124,7 @@ int main(int argc, char *argv[])
 
     // print message
     char *str = message_to_string(response, true);
-    printf("Mensagem #%d:\n%s\n", nr_msgs, str);
+    printf("Mensagem #%d)\n%s\n", nr_msgs, str);
     fflush(stdout);
 
     // close message file
