@@ -51,8 +51,6 @@ int main(int argc, char *argv[]) {
     return 1;
   }
 
-  close(fd);
-
   MESSAGE m;
   int read_bytes = 0;
   int number = 0;
@@ -83,5 +81,8 @@ int main(int argc, char *argv[]) {
     close(message_fd);
   }
 
+  close(fd);
+  close(response);
+  
   return 0;
 }

@@ -60,6 +60,11 @@ void handle_fifo(int fd, bool is_main_fifo)
       }
     }
 
+    printf("> Received message from %s\n", m.sender);
+    printf("> Message: %s\n", m.message);
+    printf("> Type: %s\n", message_type_str[m.type]);
+    fflush(stdout);
+
     if (valid)
     {
       switch (m.type)
@@ -180,19 +185,10 @@ void handle_fifo(int fd, bool is_main_fifo)
 
       case user_message:
       {
-        char fifo_path[100];
-        snprintf(fifo_path, 100, "tmp/main_fifo");
-
-        int fifo_fd = open(fifo_path, O_RDONLY);
-        if (fifo_fd == -1)
-        {
-          perror("[ERROR] Couldn't open main FIFO");
-          break;
-        }
-
         queue[current_index] = m;
         current_index++;
-        
+        printf("> Message from %s: %s\n", m.sender, m.message);
+        fflush(stdout);
         break;
       }
 

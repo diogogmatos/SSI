@@ -38,7 +38,7 @@ int main(int argc, char *argv[])
   int total_length = message_len + 1;
 
   message.timestamp = time(NULL);
-  int type_len = user_list_message;
+  message.type = user_message;
 
   if (message_len > STRING_SIZE)
   {
@@ -47,6 +47,8 @@ int main(int argc, char *argv[])
     write(1, buffer, strlen(buffer));
     return 1;
   }
+
+  snprintf(message.message, STRING_SIZE, "%s", argv[2]);
 
   int fd = open("tmp/main_fifo", O_WRONLY);
   if (fd == -1)
@@ -57,9 +59,14 @@ int main(int argc, char *argv[])
 
   printf("MESSAGE: %s \nSize: %d\n", message.message, total_length);
   printf("Sender: %s\n", message.sender);
+  printf("Receiver: %s\n", message.receiver);
+  printf("Timestamp: %ld\n", message.timestamp);
+  printf("Type: %d\n", message.type);
+
 
   // Type of message
   int rs = write(fd, &message, sizeof(MESSAGE));
+  printf("rs: %d\n", rs);
   if (rs == -1)
   {
     perror("Error writing to FIFO");
