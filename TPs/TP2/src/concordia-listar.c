@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <dirent.h>
 
 int main(int argc, char *argv[])
 {
@@ -19,39 +20,48 @@ int main(int argc, char *argv[])
   char *received_path[100];
   snprintf(received_path, 100, "concordia/%s/received", username);
 
-  // count messages
-  int nr_msgs = count_files_in_dir(received_path);
-  if (nr_msgs == -1)
-  {
-    return -1;
-  }
-
   // if -a option is passed, print saved messages
   if (argc == 2 && strcmp(argv[1], "-a") == 0)
   {
-    // print all messages
-    for (int i = 1; i <= nr_msgs; i++)
+    // open directory
+    DIR *dir = opendir(received_path);
+    struct dirent *entry;
+    if (dir == NULL)
     {
-      char *message_path[100];
-      snprintf(message_path, 100, "%s/%d", received_path, i);
-
-      int message_fd = open(message_path, O_RDONLY);
-      if (message_fd == -1)
-      {
-        perror("[ERROR] Couldn't open message file");
-        return -1;
-      }
-
-      MESSAGE m = file_to_message(message_fd);
-
-      // print message
-      char *str = message_to_string(m, true);
-      printf("Mensagem #%d)\n%s\n", i, str);
-      fflush(stdout);
-
-      // close message file
-      close(message_fd);
+      perror("[ERROR] Couldn't open directory");
+      return -1;
     }
+
+    // print all messages
+    while ((entry = readdir(dir)) != NULL)
+    {
+      // filter out "." and ".." entries
+      if (strcmp(entry->d_name, ".") != 0 && strcmp(entry->d_name, "..") != 0)
+      {
+        char *message_path[100];
+        snprintf(message_path, 100, "%s/%s", received_path, entry->d_name);
+
+        int message_fd = open(message_path, O_RDONLY);
+        if (message_fd == -1)
+        {
+          perror("[ERROR] Couldn't open message file");
+          return -1;
+        }
+
+        MESSAGE m = file_to_message(message_fd);
+
+        // print message
+        char *str = message_to_string(m, true);
+        printf("Mensagem #%s)\n%s\n", entry->d_name, str);
+        fflush(stdout);
+
+        // close message file
+        close(message_fd);
+      }
+    }
+
+    // close directory
+    closedir(dir);
   }
 
   // create response fifo
@@ -98,6 +108,13 @@ int main(int argc, char *argv[])
   if (fd == -1)
   {
     perror("[ERROR] Couldn't open response FIFO");
+    return -1;
+  }
+
+  // count messages
+  int nr_msgs = count_files_in_dir(received_path);
+  if (nr_msgs == -1)
+  {
     return -1;
   }
 
