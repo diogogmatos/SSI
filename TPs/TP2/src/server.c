@@ -35,6 +35,16 @@ int set_permissions(char *username, char *permissions, char *dir_path)
   execute_command(execute);
 }
 
+int remove_permissions(char *username, char *dir_path)
+{
+  // set command
+  char execute[100];
+  snprintf(execute, 100, "setfacl -x u:%s %s", username, dir_path);
+
+  // execute command
+  execute_command(execute);
+}
+
 void handle_fifo(int fd, bool is_main_fifo, QUEUE *queue)
 {
   MESSAGE m;
@@ -66,8 +76,9 @@ void handle_fifo(int fd, bool is_main_fifo, QUEUE *queue)
       {
       case user_activate:
       {
+        // set permissions for user
         set_permissions(m.sender, "rwx", "tmp/main_fifo");
-        set_permissions(m.sender, "rwx", "tmp/concordia/");
+
         // open response fifo
         char response_path[100];
         snprintf(response_path, 100, "tmp/concordia/%s", m.sender);
@@ -159,6 +170,9 @@ void handle_fifo(int fd, bool is_main_fifo, QUEUE *queue)
 
           break;
         }
+
+        // remove permissions for user
+        remove_permissions(m.sender, "tmp/main_fifo");
 
         // create response message
         MESSAGE response;
