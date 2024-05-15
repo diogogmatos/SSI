@@ -19,7 +19,8 @@ typedef enum _message_type
     user_message,
     user_list_message,
     user_respond_message,
-    create_group
+    create_group,
+    group_remove
 } MESSAGE_TYPE;
 
 const char *message_type_str[] = {
@@ -28,7 +29,9 @@ const char *message_type_str[] = {
     "user_message",
     "user_list_message",
     "user_respond_message",
-    "create_group"};
+    "create_group",
+    "remove_group"
+};
 
 typedef struct _message
 {

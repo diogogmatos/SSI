@@ -76,7 +76,7 @@ int main(int argc, char *argv[]) {
 
     // Create Messages Directory
     char dir_path[100];
-    snprintf(dir_path, 100, "concordia/%s/messages", folder_name);
+    snprintf(dir_path, 100, "concordia/g-%s/messages", folder_name);
     r = mkdir(dir_path, 0700);
     if (r == -1)
     {

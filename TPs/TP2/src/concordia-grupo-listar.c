@@ -6,17 +6,41 @@
 #define MAX_COMMAND_LENGTH 200
 #define MAX_OUTPUT_LENGTH 500
 
+void filterUsers(const char *data) {
+    char *line;
+    char *copy = strdup(data); 
+    if (copy == NULL) {
+        perror("Memory allocation failed");
+        return;
+    }
+
+    line = strtok(copy, "\n");
+    for(int i = 0; line != NULL; i) {
+        if (strncmp(line, "user", 4) == 0 ) {
+            i++;
+            if( i > 1) {
+                printf("%d - %s\n", i - 1, line + 5); 
+            }
+
+        }
+        line = strtok(NULL, "\n");
+    }
+
+    free(copy);
+}
+
 int main(int argc, char *argv[]) {
     if (argc != 2) {
-        printf("Usage: %s <folder_path>\n", argv[0]);
+        printf("Usage: %s <group_name>\n", argv[0]);
         return 1;
     }
 
-    char *folder_path = argv[1];
+    char group_path[100];
+    snprintf(group_path, 100, "concordia/g-%s/messages", argv[1]);
     char command[MAX_COMMAND_LENGTH];
     char output[MAX_OUTPUT_LENGTH];
 
-    snprintf(command, sizeof(command), "getfacl %s", folder_path);
+    snprintf(command, sizeof(command), "getfacl %s", group_path);
 
     FILE *pipe = popen(command, "r");
     if (pipe == NULL) {
@@ -35,7 +59,8 @@ int main(int argc, char *argv[]) {
 
     pclose(pipe);
 
-    printf("Permissions for %s:\n%s\n", folder_path, output);
+    printf("Users with acesse for %s:\n", group_path);
+    filterUsers(output);
 
     return 0;
 }

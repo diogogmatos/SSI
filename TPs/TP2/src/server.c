@@ -209,7 +209,7 @@ void handle_fifo(int fd, bool is_main_fifo, QUEUE *queue)
 
         // create group's directory
         char group_path[100];
-        snprintf(group_path, 100, "concordia/%s", m.message);
+        snprintf(group_path, 100, "concordia/g-%s", m.message);
         int r = mkdir(group_path, 0700);
         if (r == -1)
         {
@@ -325,11 +325,63 @@ void handle_fifo(int fd, bool is_main_fifo, QUEUE *queue)
         break;
       }
 
-      case user_respond_message:
+      case group_remove:
       {
-        char fifo_path[100];
-        snprintf(fifo_path, 100, "tmp/main_fifo");
-        int fifo;
+        sprintf(path, "concordia/g-%s", m.message);
+        int r = rmdir(path);
+        if (r == -1)
+        {
+          perror("[ERROR] Couldn't remove groups's directory.");
+          break;
+        }
+
+        // open response fifo
+        char response_path[100];
+        snprintf(response_path, 100, "tmp/concordia/%s", m.message);
+
+        int response_fd = open(response_path, O_WRONLY);
+        if (response_fd == -1)
+        {
+          perror("[ERROR] Couldn't open response FIFO");
+
+          // create response message
+          MESSAGE response;
+          strncpy(response.sender, "server", STRING_SIZE);
+          strncpy(response.receiver, m.sender, STRING_SIZE);
+          response.type = user_deactivate;
+          strncpy(response.message, "failed", STRING_SIZE);
+          response.timestamp = time(NULL);
+
+          // send response
+          r = write(response_fd, &response, sizeof(MESSAGE));
+
+          // close response fifo
+          close(response_fd);
+
+          break;
+        }
+
+        // create response message
+        MESSAGE response;
+        strncpy(response.sender, "server", STRING_SIZE);
+        strncpy(response.receiver, m.sender, STRING_SIZE);
+        response.type = user_deactivate;
+        strncpy(response.message, "success", STRING_SIZE);
+        response.timestamp = time(NULL);
+
+        // send response
+        r = write(response_fd, &response, sizeof(MESSAGE));
+
+        // close response fifo
+        close(response_fd);
+
+        printf("> Group '%s' deleted.\n", m.message);
+        fflush(stdout);
+
+        break;
+
+
+
       }
 
       default:
@@ -356,7 +408,7 @@ void reapply_perms(const char *dirname)
   while ((entry = readdir(dir)) != NULL)
   {
     // exclude current directory and parent directory entries
-    if (strcmp(entry->d_name, ".") != 0 && strcmp(entry->d_name, "..") != 0)
+    if (strcmp(entry->d_name, ".") != 0 && strcmp(entry->d_name, "..") != 0 && strncmp(entry->d_name, "g-", 2 != 0))
     {
       // give rwx permission to the main FIFO for the user
       set_permissions(entry->d_name, "rwx", "tmp/main_fifo");
