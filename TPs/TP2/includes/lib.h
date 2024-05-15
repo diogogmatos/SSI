@@ -18,5 +18,6 @@ char *get_username();
 char *message_to_string(MESSAGE m, bool simple);
 int count_files_in_dir(char *path);
 int message_to_file(int fd, MESSAGE m);
+void get_file_owner(char* owner, char* path);
 
 #endif

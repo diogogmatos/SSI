@@ -7,6 +7,57 @@
 
 #define BLOCK_SIZE 16
 
+int send_to_group(char* group, char* message) {
+
+  char group_path[100];
+  snprintf(group_path, 100, "concordia/%s/messages", group);
+
+  int nr_msgs = count_files_in_dir(group_path);
+  if (nr_msgs == -1)
+  {
+    return -1;
+  }
+
+  MESSAGE m;
+  sprintf(m.sender, get_username());
+  sprintf(m.receiver, group + 2);
+  sprintf(m.message, message);
+  m.timestamp = time(NULL);
+
+  char message_path[100];
+  snprintf(message_path, 100, "%s/%d", group_path, nr_msgs + 1);
+  
+  int fd = open(message_path, O_WRONLY | O_CREAT, 0755);
+  if (fd == -1)
+  {
+    perror("[ERROR] Couldn't open/create message file");
+    return -1;
+  }
+  message_to_file(fd, m);
+  close(fd);
+
+  char group_owner[100];
+  get_file_owner(group_owner, group_path);
+  if (group_owner == NULL)
+  {
+    return -1;
+  }
+  
+  char owner_perms[100];
+  snprintf(owner_perms, 100, "setfacl -m u:%s:r-x %s", group_owner, message_path);
+
+  int r = system(owner_perms);
+  if (r == -1)
+  {
+    perror("[ERROR] Couldn't set owner permissions");
+    return -1;
+  }
+
+  return 0;
+  
+}
+
+
 int main(int argc, char *argv[])
 {
   if (argc < 3)
@@ -17,6 +68,10 @@ int main(int argc, char *argv[])
     write(1, buffer, strlen(buffer));
     return -1;
   }
+
+  // if(strncmp(argv[1], "g-", 2) == 0) {
+  //   return send_to_group(argv[1], argv[2]);
+  // }
 
   // get username
   char *username = get_username();

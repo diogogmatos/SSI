@@ -7,6 +7,8 @@
 #include <string.h>
 #include <time.h>
 #include <stdbool.h>
+#include <sys/stat.h>
+#include <pwd.h>
 
 #include "../includes/lib.h"
 
@@ -146,3 +148,21 @@ char *message_to_string(MESSAGE m, bool simple)
 
     return str;
 }
+
+void get_file_owner(char* owner, char* path)
+{
+    struct stat fileStat;
+    if (stat(path, &fileStat) == -1) {
+        perror("Error getting file status");
+        return 1;
+    }
+
+    struct passwd *ownerInfo = getpwuid(fileStat.st_uid);
+    if (ownerInfo == NULL) {
+        perror("Error getting owner information");
+        return 1;
+    }
+
+    strcpy(owner,ownerInfo->pw_name);
+}
+

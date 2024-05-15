@@ -7,16 +7,47 @@
 
 #define BLOCK_SIZE 16
 
+int read_from_group(char* group, char* id) {
+  char group_path[100];
+  snprintf(group_path, 100, "concordia/%s/messages", group);
+
+  char message_path[100];
+  snprintf(message_path, 100, "%s/%s", group_path, id);
+
+  int fd = open(message_path, O_RDONLY);
+  if (fd == -1)
+  {
+    perror("[ERROR] Couldn't open message file");
+    return -1;
+  }
+
+  MESSAGE m = file_to_message(fd);
+
+  close(fd);
+
+  char *str = message_to_string(m, false);
+  printf("Mensagem #%s)\n%s\n", id, str);
+  fflush(stdout);
+
+  return 0;
+
+}
+
 int main(int argc, char *argv[])
 {
   if (argc < 2)
   {
     char buffer[100];
-    snprintf(buffer, 100, "Usage: %s <id>\n",
+    snprintf(buffer, 100, "Usage: %s <id> [g-<grupo-name>]\n",
              argv[0]);
     write(1, buffer, strlen(buffer));
     return 1;
   }
+
+  // if(strncmp(argv[1], "g-", 2) == 0)
+  // {
+  //   return read_from_group(argv[1], argv[2]);
+  // }
 
   // get username
   char *username = get_username();

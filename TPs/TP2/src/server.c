@@ -408,7 +408,7 @@ void reapply_perms(const char *dirname)
   while ((entry = readdir(dir)) != NULL)
   {
     // exclude current directory and parent directory entries
-    if (strcmp(entry->d_name, ".") != 0 && strcmp(entry->d_name, "..") != 0 && strncmp(entry->d_name, "g-", 2 != 0))
+    if (strcmp(entry->d_name, ".") != 0 && strcmp(entry->d_name, "..") != 0 && strncmp(entry->d_name, "g-", 2) != 0)
     {
       // give rwx permission to the main FIFO for the user
       set_permissions(entry->d_name, "rwx", "tmp/main_fifo");
