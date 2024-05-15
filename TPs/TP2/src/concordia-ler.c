@@ -16,14 +16,15 @@ int read_from_group(char* group, char* id) {
 
   int fd = open(message_path, O_RDONLY);
   if (fd == -1)
-  {
-    perror("[ERROR] Couldn't open message file");
+  { 
+    char error[100];
+    sprintf(error, "[ERROR] Couldn't open message file %s", message_path);
+    perror(error);
     return -1;
   }
-
+  
   MESSAGE m = file_to_message(fd);
-
-  close(fd);
+  m.type = user_message;
 
   char *str = message_to_string(m, false);
   printf("Mensagem #%s)\n%s\n", id, str);
@@ -44,10 +45,10 @@ int main(int argc, char *argv[])
     return 1;
   }
 
-  // if(strncmp(argv[1], "g-", 2) == 0)
-  // {
-  //   return read_from_group(argv[1], argv[2]);
-  // }
+  if(strncmp(argv[2], "g-", 2) == 0)
+  {
+    return read_from_group(argv[2], argv[1]);
+  }
 
   // get username
   char *username = get_username();

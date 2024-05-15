@@ -69,9 +69,9 @@ int main(int argc, char *argv[])
     return -1;
   }
 
-  // if(strncmp(argv[1], "g-", 2) == 0) {
-  //   return send_to_group(argv[1], argv[2]);
-  // }
+  if(strncmp(argv[1], "g-", 2) == 0) {
+    return send_to_group(argv[1], argv[2]);
+  }
 
   // get username
   char *username = get_username();
